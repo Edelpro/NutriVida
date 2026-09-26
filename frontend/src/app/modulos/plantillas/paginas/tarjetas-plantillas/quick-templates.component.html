@@ -1,0 +1,226 @@
+<section class="quick-templates" aria-labelledby="quickTemplatesTitle">
+  <header>
+    <div>
+      <p class="eyebrow">Ahorrar tiempo sin perder criterio</p>
+      <h2 id="quickTemplatesTitle">{{ config().title }}</h2>
+      <p>{{ config().description }}</p>
+    </div>
+    <button class="button button-secondary" type="button" (click)="openCreate()">
+      <app-icon name="plus" />Crear plantilla
+    </button>
+  </header>
+  @if (loading()) {
+    <div class="template-status" role="status">
+      <span class="spinner"></span>Cargando plantillas…
+    </div>
+  } @else if (error()) {
+    <div class="notice notice-danger" role="alert">
+      <app-icon name="info" /><span>{{ error() }}</span
+      ><button class="button button-secondary button-small" type="button" (click)="load()">
+        Reintentar
+      </button>
+    </div>
+  } @else {
+    <div class="template-grid">
+      @for (template of templates(); track template.id) {
+        <article class="template-card">
+          <div class="card-top">
+            <span class="badge">{{ template.category }}</span>
+            <div>
+              <button
+                class="icon-button"
+                type="button"
+                aria-label="Editar {{ template.name }}"
+                (click)="openEdit(template)"
+              >
+                <app-icon name="edit" />
+              </button>
+              @if (canArchive()) {
+                <button
+                  class="icon-button archive"
+                  type="button"
+                  aria-label="Archivar {{ template.name }}"
+                  (click)="requestArchive(template)"
+                >
+                  <app-icon name="trash" />
+                </button>
+              }
+            </div>
+          </div>
+          <h3>{{ template.name }}</h3>
+          <strong>{{ template.objective }}</strong>
+          <p>{{ template.summary }}</p>
+          <button class="button button-primary" type="button" (click)="use(template)">
+            Usar como base
+          </button>
+        </article>
+      }
+      @if (!templates().length) {
+        <button class="create-card" type="button" (click)="openCreate()">
+          <app-icon name="plus" /><strong>Crear primera plantilla</strong
+          ><span>Guarda aquí los casos que sueles repetir.</span>
+        </button>
+      }
+    </div>
+  }
+  <p class="safety-note">
+    <app-icon name="shield" />Cada plantilla debe revisarse y aprobarse para el paciente activo; no
+    sustituye la valoración nutricional.
+  </p>
+</section>
+
+<dialog #templateDialog class="template-dialog">
+  <form #templateForm="ngForm" novalidate (ngSubmit)="save(templateForm)">
+    <header class="dialog-header">
+      <div>
+        <h2>{{ editing() ? 'Editar plantilla' : 'Crear plantilla' }}</h2>
+        <p>{{ config().editorHelp }}</p>
+      </div>
+      <button class="icon-button" type="button" aria-label="Cerrar" (click)="closeEditor()">
+        <app-icon name="close" />
+      </button>
+    </header>
+    <div class="dialog-body">
+      @if (formError()) {
+        <div class="notice notice-danger" role="alert">
+          <app-icon name="info" />{{ formError() }}
+        </div>
+      }
+      <div class="template-form">
+        <div class="field">
+          <label for="templateName">Nombre</label
+          ><input
+            id="templateName"
+            name="templateName"
+            [(ngModel)]="model.name"
+            required
+            minlength="3"
+            maxlength="180"
+          />
+        </div>
+        <div class="field">
+          <label for="templateCategory">Categoría</label
+          ><select
+            id="templateCategory"
+            name="templateCategory"
+            [(ngModel)]="model.category"
+            required
+          >
+            <option>Objetivo</option>
+            <option>Condición clínica</option>
+            <option>Presupuesto</option>
+            <option>Seguimiento</option>
+            <option>Otro</option>
+          </select>
+        </div>
+        <div class="field full">
+          <label for="templateObjective">Objetivo</label
+          ><input
+            id="templateObjective"
+            name="templateObjective"
+            [(ngModel)]="model.objective"
+            required
+            minlength="3"
+            maxlength="180"
+          />
+        </div>
+        <div class="field full">
+          <label for="templateSummary">Resumen visible en la tarjeta</label
+          ><textarea
+            class="resize-none"
+            id="templateSummary"
+            name="templateSummary"
+            rows="3"
+            [(ngModel)]="model.summary"
+            required
+            minlength="10"
+            maxlength="500"
+          ></textarea>
+        </div>
+        @for (field of config().fields; track field.key) {
+          <div class="field full">
+            <label [class.required]="field.required" [for]="'template-' + field.key">{{ field.label }}</label>
+            @if (field.kind === 'input') {
+              <input
+                #inputValue="ngModel"
+                [id]="'template-' + field.key"
+                [name]="'template-' + field.key"
+                [(ngModel)]="model.values[field.key]"
+                [required]="field.required ?? false"
+                [attr.minlength]="field.required ? 3 : null"
+                [maxlength]="field.maxLength"
+                [attr.aria-describedby]="'help-' + field.key"
+              />
+              @if (inputValue.invalid && inputValue.touched) {
+                <small class="form-error" role="alert">Completa este campo antes de guardar.</small>
+              }
+            } @else {
+              <textarea
+                #textareaValue="ngModel"
+                class="resize-none"
+                [id]="'template-' + field.key"
+                [name]="'template-' + field.key"
+                [rows]="field.rows ?? 4"
+                [(ngModel)]="model.values[field.key]"
+                [required]="field.required ?? false"
+                [attr.minlength]="field.required ? 10 : null"
+                [maxlength]="field.maxLength"
+                [attr.aria-describedby]="'help-' + field.key"
+              ></textarea>
+              @if (textareaValue.invalid && textareaValue.touched) {
+                <small class="form-error" role="alert">Completa al menos 10 caracteres.</small>
+              }
+            }
+            <small [id]="'help-' + field.key">{{ field.help }}</small>
+          </div>
+        }
+      </div>
+    </div>
+    <footer class="dialog-footer">
+      <button
+        class="button button-secondary"
+        type="button"
+        [disabled]="saving()"
+        (click)="closeEditor()"
+      >
+        Cancelar</button
+      ><button class="button button-primary" type="submit" [disabled]="saving()">
+        {{ saving() ? 'Guardando…' : editing() ? 'Guardar cambios' : 'Crear plantilla' }}
+      </button>
+    </footer>
+  </form>
+</dialog>
+
+<dialog #archiveDialog class="archive-template-dialog">
+  <section aria-labelledby="archiveTemplateTitle">
+    <header class="dialog-header">
+      <div>
+        <h2 id="archiveTemplateTitle">Archivar plantilla</h2>
+        <p>Esta acción es reversible en la base de datos.</p>
+      </div>
+    </header>
+    <div class="dialog-body">
+      <p>
+        Se ocultará <strong>{{ archiving()?.name }}</strong
+        >, sin eliminar sus datos.
+      </p>
+    </div>
+    <footer class="dialog-footer">
+      <button
+        class="button button-secondary"
+        type="button"
+        [disabled]="saving()"
+        (click)="closeArchive()"
+      >
+        Cancelar</button
+      ><button
+        class="button button-warning"
+        type="button"
+        [disabled]="saving()"
+        (click)="confirmArchive()"
+      >
+        {{ saving() ? 'Archivando…' : 'Archivar plantilla' }}
+      </button>
+    </footer>
+  </section>
+</dialog>

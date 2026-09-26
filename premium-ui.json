@@ -1,0 +1,22 @@
+{
+  "profile": "product-admin",
+  "sourceRoots": ["frontend/src"],
+  "locale": "es-EC",
+  "canonicalMap": "UX-CONTRACT.md",
+  "requiredCapabilities": ["Table Selection", "Select/Listbox", "Date", "Form", "Scrollbar", "Toast", "CRUD"],
+  "ownership": {
+    "Select/Listbox": "native",
+    "Date": "native"
+  },
+  "requiredCommands": ["frontend-build", "frontend-test", "backend-test", "premium"],
+  "commands": {
+    "frontend-build": "npm --prefix frontend run build",
+    "frontend-test": "npm --prefix frontend test -- --watch=false",
+    "backend-test": "dotnet test backend/NutriVida.sln",
+    "premium": "python audit_project.py . --mode strict"
+  },
+  "evidence": {
+    "crudFullFlow": "docs/qa/VERIFICATION.md",
+    "failurePaths": "docs/qa/VERIFICATION.md"
+  }
+}

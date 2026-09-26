@@ -1,0 +1,29 @@
+{
+  "ConnectionStrings": {
+    "NutriVida": "CONFIGURAR_CON_VARIABLE_DE_ENTORNO"
+  },
+  "Authentication": {
+    "Issuer": "https://api.tu-dominio.com",
+    "Audience": "nutrivida-web",
+    "SigningKey": "CONFIGURAR_UN_SECRETO_ALEATORIO_DE_32_BYTES_O_MAS"
+  },
+  "Security": {
+    "AllowedOrigins": [
+      "https://app.tu-dominio.com"
+    ]
+  },
+  "Messaging": {
+    "Mode": "WhatsAppCloud",
+    "WhatsAppCloud": {
+      "Enabled": true,
+      "GraphApiVersion": "v23.0",
+      "PhoneNumberId": "CONFIGURAR_CON_VARIABLE_DE_ENTORNO",
+      "AccessToken": "CONFIGURAR_CON_SECRETO_DEL_ENTORNO",
+      "AppSecret": "CONFIGURAR_CON_SECRETO_DEL_ENTORNO",
+      "VerifyToken": "CONFIGURAR_CON_SECRETO_DEL_ENTORNO",
+      "TemplateName": "plantilla_utilitaria_aprobada_opcional",
+      "TemplateLanguage": "es"
+    }
+  },
+  "AllowedHosts": "api.tu-dominio.com"
+}

@@ -1,0 +1,48 @@
+# Visual Studio / Rider / PyCharm
+.vs/
+.idea/
+*.user
+*.suo
+
+# .NET
+**/bin/
+**/obj/
+TestResults/
+backend/.build-check*/
+
+# Angular / Node
+frontend/node_modules/
+frontend/dist/
+frontend/.angular/
+frontend/.vscode/
+npm-debug.log*
+coverage/
+frontend/coverage/
+
+# Generated publications, reports and audits
+artifacts/
+output/
+premium-audit.json
+
+# Runtime content (never publish patient/user uploads)
+backend/src/NutriVida.Api/wwwroot/uploads/**
+!backend/src/NutriVida.Api/wwwroot/uploads/.gitkeep
+
+# Local databases and backups
+*.mdf
+*.ldf
+*.bak
+*.bacpac
+*.db
+*.sqlite
+*.sqlite3
+
+# Local configuration and secrets
+.env
+.env.*
+!.env.example
+appsettings.Local.json
+
+# OS files
+.DS_Store
+Thumbs.db

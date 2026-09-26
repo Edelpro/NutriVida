@@ -1,0 +1,687 @@
+<div class="page dishes-page">
+  <header class="page-header">
+    <div>
+      <p class="eyebrow">Biblioteca reutilizable</p>
+      <h1>Platos y preparaciones</h1>
+      <p class="lede">
+        Crea opciones con alimentos reales, calcula su costo por porción y reutilízalas al
+        planificar.
+      </p>
+    </div>
+    <div class="toolbar">
+      <button class="button button-primary" type="button" (click)="openCreate()">
+        <app-icon name="plus" />Crear plato
+      </button>
+    </div>
+  </header>
+
+  <app-flujo-plan-nutricional [currentStep]="2" />
+
+  <section class="budget-guide" aria-labelledby="budgetTitle">
+    <span class="guide-icon"><app-icon name="dish" /></span>
+    <div>
+      <p class="eyebrow">Planificación accesible</p>
+      <h2 id="budgetTitle">El precio se registra según el mercado local</h2>
+      <p>
+        La composición nutricional sale del catálogo; el costo lo actualiza la profesional porque
+        puede variar por ciudad, temporada y proveedor.
+      </p>
+    </div>
+  </section>
+
+  <section class="surface" aria-labelledby="dishListTitle">
+    <header class="surface-header list-heading">
+      <div>
+        <p class="eyebrow">Paso 2 · Platos guardados</p>
+        <h2 id="dishListTitle">Platos guardados</h2>
+        <p>Todo plato que crees aparece aquí y también en el selector de Plan de menú.</p>
+      </div>
+      <span class="caption">{{ total() }} {{ total() === 1 ? 'plato' : 'platos' }}</span>
+    </header>
+    <form class="dish-filters" novalidate (submit)="$event.preventDefault(); applyFilters()">
+      <div class="field search-field">
+        <label for="dishSearch">Buscar plato o ingrediente</label>
+        <input
+          #searchInput
+          id="dishSearch"
+          name="dishSearch"
+          [(ngModel)]="query"
+          autocomplete="off"
+        />
+      </div>
+      <div class="field">
+        <label for="mealFilter">Tiempo de comida</label>
+        <select id="mealFilter" name="mealFilter" [(ngModel)]="mealFilter">
+          <option value="">Todos</option>
+          <option>Desayuno</option>
+          <option>Media mañana</option>
+          <option>Almuerzo</option>
+          <option>Media tarde</option>
+          <option>Cena</option>
+        </select>
+      </div>
+      <div class="field">
+        <label for="maxCost">Máximo por porción</label>
+        <input
+          id="maxCost"
+          name="maxCost"
+          type="number"
+          min="0"
+          max="10000"
+          step="0.05"
+          inputmode="decimal"
+          [(ngModel)]="maxCost"
+        />
+      </div>
+      <button class="button button-secondary" type="submit">Aplicar filtros</button>
+      @if (query || mealFilter || maxCost) {
+        <button class="button button-quiet" type="button" (click)="clearFilters(searchInput)">
+          Limpiar
+        </button>
+      }
+    </form>
+
+    @if (loading()) {
+      <div class="status-message" role="status">
+        <span class="spinner"></span><span>Cargando platos…</span>
+      </div>
+    } @else if (error()) {
+      <div class="empty-state" role="alert">
+        <div>
+          <app-icon name="info" />
+          <h2>No se pudo cargar la biblioteca</h2>
+          <p>{{ error() }}</p>
+          <button class="button button-secondary" type="button" (click)="load()">Reintentar</button>
+        </div>
+      </div>
+    } @else if (!dishes().length) {
+      <div class="empty-state">
+        <div>
+          <app-icon name="dish" />
+          <h2>
+            {{
+              query || mealFilter || maxCost
+                ? 'No hay coincidencias'
+                : 'Aún no hay platos guardados'
+            }}
+          </h2>
+          <p>
+            {{
+              query || mealFilter || maxCost
+                ? 'Cambia o limpia los filtros.'
+                : 'Crea un plato para reutilizar sus ingredientes y costos en los planes.'
+            }}
+          </p>
+          @if (!(query || mealFilter || maxCost)) {
+            <button class="button button-primary" type="button" (click)="openCreate()">
+              Crear primer plato
+            </button>
+          }
+        </div>
+      </div>
+    } @else {
+      <div class="recipe-grid" aria-label="Recetario de platos">
+        @for (dish of dishes(); track dish.id) {
+          <article class="recipe-card">
+            <button
+              class="recipe-media"
+              type="button"
+              (click)="openRecipe(dish)"
+              [attr.aria-label]="'Ver receta de ' + dish.name"
+            >
+              @if (dish.imageUrl) {
+                <img [src]="dish.imageUrl" [alt]="dish.name" loading="lazy" />
+              } @else {
+                <span class="recipe-placeholder"><app-icon name="dish" />Sin fotografía</span>
+              }
+              @if (dish.videoUrl) {
+                <span class="video-label">▶ Video</span>
+              }
+            </button>
+            <div class="recipe-content">
+              <div class="recipe-title">
+                <div>
+                  <small>{{ dish.mealName }} · {{ dish.preparationMinutes }} min</small>
+                  <h3>{{ dish.name }}</h3>
+                </div>
+                <strong>{{ dish.energyKcalPerServing | number: '1.0-0' }} kcal</strong>
+              </div>
+              <dl class="macro-grid">
+                <div>
+                  <dt>Proteína</dt>
+                  <dd>{{ dish.proteinGPerServing | number: '1.0-1' }} g</dd>
+                </div>
+                <div>
+                  <dt>Carbohidratos</dt>
+                  <dd>{{ dish.carbohydrateGPerServing | number: '1.0-1' }} g</dd>
+                </div>
+                <div>
+                  <dt>Grasa</dt>
+                  <dd>{{ dish.fatGPerServing | number: '1.0-1' }} g</dd>
+                </div>
+                <div>
+                  <dt>Fibra</dt>
+                  <dd>{{ dish.fiberGPerServing | number: '1.0-1' }} g</dd>
+                </div>
+              </dl>
+              <div class="recipe-meta">
+                <span>{{ dish.servings }} porciones</span>
+                <span>{{ dish.ingredients.length }} ingredientes</span>
+                <strong
+                  >{{
+                    dish.costPerServingUsd | currency: 'USD' : 'symbol' : '1.2-2' : 'es-EC'
+                  }}/porción</strong
+                >
+              </div>
+              <div class="recipe-actions">
+                <button
+                  class="button button-secondary button-small"
+                  type="button"
+                  (click)="openRecipe(dish)"
+                >
+                  Ver receta
+                </button>
+                <a
+                  class="button button-primary button-small"
+                  routerLink="/menus"
+                  [queryParams]="{ dishId: dish.id }"
+                >
+                  Añadir al menú
+                </a>
+                <button
+                  class="icon-button"
+                  type="button"
+                  [attr.aria-label]="'Editar ' + dish.name"
+                  (click)="openEdit(dish)"
+                >
+                  <app-icon name="edit" />
+                </button>
+                <button
+                  class="icon-button archive-button"
+                  type="button"
+                  [disabled]="!canArchive()"
+                  [attr.aria-describedby]="!canArchive() ? 'archivePermission' : null"
+                  [attr.aria-label]="'Archivar ' + dish.name"
+                  (click)="requestArchive(dish)"
+                >
+                  <app-icon name="trash" />
+                </button>
+              </div>
+            </div>
+          </article>
+        }
+      </div>
+      @if (!canArchive()) {
+        <p id="archivePermission" class="permission-note">
+          Solo el Administrador puede archivar platos; la Nutricionista puede crearlos y editarlos.
+        </p>
+      }
+      <nav class="pagination" aria-label="Paginación de platos">
+        <span>{{ rangeStart() }}–{{ rangeEnd() }} de {{ total() }}</span>
+        <div>
+          <button
+            class="icon-button"
+            type="button"
+            aria-label="Página anterior"
+            [disabled]="page() === 1"
+            (click)="changePage(page() - 1)"
+          >
+            <app-icon name="arrow" /></button
+          ><span>Página {{ page() }} de {{ totalPages() }}</span
+          ><button
+            class="icon-button next"
+            type="button"
+            aria-label="Página siguiente"
+            [disabled]="page() === totalPages()"
+            (click)="changePage(page() + 1)"
+          >
+            <app-icon name="arrow" />
+          </button>
+        </div>
+      </nav>
+    }
+  </section>
+</div>
+
+<dialog #dishDialog class="dish-dialog" (close)="resetFormState()">
+  <form #dishForm="ngForm" novalidate (ngSubmit)="save(dishForm)">
+    <header class="dialog-header">
+      <div>
+        <h2>{{ editing() ? 'Editar plato' : 'Crear plato' }}</h2>
+        <p>Los cálculos usan las porciones del catálogo alimentario.</p>
+      </div>
+      <button class="icon-button" type="button" aria-label="Cerrar" (click)="closeEditor()">
+        <app-icon name="close" />
+      </button>
+    </header>
+    <div class="dialog-body">
+      @if (formError()) {
+        <div class="notice notice-danger" role="alert">
+          <app-icon name="info" />{{ formError() }}
+        </div>
+      }
+      <div class="dish-form-grid">
+        <div class="field span-2">
+          <label class="required" for="dishName">Nombre del plato</label
+          ><input
+            id="dishName"
+            name="dishName"
+            [(ngModel)]="model.name"
+            required
+            minlength="3"
+            maxlength="180"
+            [attr.aria-invalid]="submitted() && model.name.trim().length < 3"
+          /><small>Ejemplo: Lentejas con arroz y aguacate.</small>
+        </div>
+        <div class="field">
+          <label for="dishMeal">Tiempo de comida</label
+          ><select id="dishMeal" name="dishMeal" [(ngModel)]="model.mealName" required>
+            <option>Desayuno</option>
+            <option>Media mañana</option>
+            <option>Almuerzo</option>
+            <option>Media tarde</option>
+            <option>Cena</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="dishServings">Porciones que rinde</label
+          ><input
+            id="dishServings"
+            name="dishServings"
+            type="number"
+            min="1"
+            max="100"
+            step="1"
+            [(ngModel)]="model.servings"
+            required
+          />
+        </div>
+        <div class="field">
+          <label for="dishMinutes">Preparación (minutos)</label
+          ><input
+            id="dishMinutes"
+            name="dishMinutes"
+            type="number"
+            min="0"
+            max="1440"
+            step="5"
+            [(ngModel)]="model.preparationMinutes"
+            required
+          />
+        </div>
+        <div class="field">
+          <label for="costDate">Fecha de referencia del costo</label
+          ><input
+            id="costDate"
+            name="costDate"
+            type="date"
+            [(ngModel)]="model.costReferenceDate"
+            required
+          />
+        </div>
+      </div>
+
+      <section class="media-editor" aria-labelledby="mediaTitle">
+        <div class="media-copy">
+          <p class="eyebrow">Presentación de la receta</p>
+          <h3 id="mediaTitle">Foto y video demostrativo</h3>
+          <p>
+            Son referencias visuales. Las cantidades y nutrientes siempre salen de los ingredientes.
+          </p>
+        </div>
+        <div class="media-form">
+          <div class="photo-upload">
+            @if (model.imageUrl) {
+              <img [src]="model.imageUrl" alt="Vista previa del plato" />
+              <button
+                class="button button-quiet button-small"
+                type="button"
+                (click)="removeImage()"
+              >
+                Quitar foto
+              </button>
+            } @else {
+              <span><app-icon name="dish" />Aún no hay fotografía</span>
+            }
+          </div>
+          <div class="field">
+            <label for="dishImage">Fotografía del plato</label>
+            <input
+              id="dishImage"
+              name="dishImage"
+              type="file"
+              accept="image/jpeg,image/png,image/webp"
+              [disabled]="uploadingImage()"
+              (change)="uploadImage($event)"
+            />
+            <small>{{
+              uploadingImage() ? 'Cargando fotografía…' : 'JPG, PNG o WebP · máximo 5 MB.'
+            }}</small>
+          </div>
+          <div class="field span-2">
+            <label for="dishVideo">Enlace del video demostrativo</label>
+            <input
+              id="dishVideo"
+              name="dishVideo"
+              type="url"
+              maxlength="2048"
+              placeholder="https://www.youtube.com/watch?v=..."
+              [(ngModel)]="model.videoUrl"
+            />
+            <small
+              >Puede ser YouTube, Vimeo o un enlace directo MP4/WebM. El video es opcional.</small
+            >
+          </div>
+        </div>
+      </section>
+
+      <section class="ingredients" aria-labelledby="ingredientsTitle">
+        <header>
+          <div>
+            <p class="eyebrow">Composición</p>
+            <h3 id="ingredientsTitle">Ingredientes</h3>
+          </div>
+          <button
+            class="button button-secondary button-small"
+            type="button"
+            (click)="addIngredient()"
+          >
+            <app-icon name="plus" />Añadir ingrediente
+          </button>
+        </header>
+        @for (row of model.ingredients; track $index; let index = $index) {
+          <div class="ingredient-row">
+            <div class="field food-select">
+              <label [for]="'ingredientFood' + index">Alimento {{ index + 1 }}</label
+              ><select
+                [id]="'ingredientFood' + index"
+                [name]="'ingredientFood' + index"
+                [(ngModel)]="row.foodItemId"
+                required
+              >
+                <option value="">Selecciona del catálogo</option>
+                @for (item of foods(); track item.id) {
+                  <option [value]="item.id">{{ item.name }} · {{ item.householdMeasure }}</option>
+                }
+              </select>
+            </div>
+            <div class="field">
+              <label [for]="'ingredientPortions' + index">Porciones</label
+              ><input
+                [id]="'ingredientPortions' + index"
+                [name]="'ingredientPortions' + index"
+                type="number"
+                min="0.25"
+                max="40"
+                step="0.25"
+                [(ngModel)]="row.portions"
+                required
+              />
+            </div>
+            <div class="field">
+              <label [for]="'ingredientCost' + index">Costo total USD</label
+              ><input
+                [id]="'ingredientCost' + index"
+                [name]="'ingredientCost' + index"
+                type="number"
+                min="0"
+                max="10000"
+                step="0.01"
+                inputmode="decimal"
+                [(ngModel)]="row.estimatedCostUsd"
+                required
+              />
+            </div>
+            <button
+              class="icon-button remove-ingredient"
+              type="button"
+              [disabled]="model.ingredients.length === 1"
+              aria-label="Quitar ingrediente {{ index + 1 }}"
+              (click)="removeIngredient(index)"
+            >
+              <app-icon name="close" />
+            </button>
+            @if (food(row)) {
+              <p class="ingredient-meta">
+                {{ food(row)!.portionGrams * row.portions | number: '1.0-0' }} g ·
+                {{ food(row)!.energyKcal * row.portions | number: '1.0-0' }} kcal
+              </p>
+            }
+          </div>
+        }
+      </section>
+
+      <div class="cost-summary" aria-live="polite">
+        <span
+          ><small>Costo total</small
+          ><strong>{{ totalCost() | currency: 'USD' : 'symbol' : '1.2-2' : 'es-EC' }}</strong></span
+        ><span class="featured"
+          ><small>Costo por porción</small
+          ><strong>{{
+            costPerServing() | currency: 'USD' : 'symbol' : '1.2-2' : 'es-EC'
+          }}</strong></span
+        ><span
+          ><small>Energía por porción</small
+          ><strong>{{ energyPerServing() | number: '1.0-0' }} kcal</strong></span
+        >
+      </div>
+      <div class="dish-form-grid notes-grid">
+        <div class="field span-2">
+          <label class="required" for="instructions">Preparación</label
+          ><textarea
+            class="resize-none"
+            id="instructions"
+            name="instructions"
+            rows="5"
+            minlength="5"
+            maxlength="4000"
+            [(ngModel)]="model.instructions"
+            required
+          ></textarea
+          ><small>Pasos claros para que la preparación pueda repetirse.</small>
+        </div>
+        <div class="field span-2">
+          <label for="costNotes">Nota sobre precios</label
+          ><textarea
+            class="resize-none"
+            id="costNotes"
+            name="costNotes"
+            rows="2"
+            maxlength="600"
+            [(ngModel)]="model.costNotes"
+          ></textarea
+          ><small>Ejemplo: precios del mercado de Quito; revisar mensualmente.</small>
+        </div>
+      </div>
+    </div>
+    <footer class="dialog-footer">
+      <button
+        class="button button-secondary"
+        type="button"
+        [disabled]="saving()"
+        (click)="closeEditor()"
+      >
+        Cancelar</button
+      ><button class="button button-primary" type="submit" [disabled]="saving()">
+        @if (saving()) {
+          <span class="spinner button-spinner"></span>
+        }
+        {{ saving() ? 'Guardando…' : editing() ? 'Guardar cambios' : 'Guardar plato' }}
+      </button>
+    </footer>
+  </form>
+</dialog>
+
+<dialog #recipeDialog class="recipe-dialog" (close)="selectedDish.set(null)">
+  @if (selectedDish(); as dish) {
+    <article aria-labelledby="recipeTitle">
+      <header class="dialog-header">
+        <div>
+          <p class="eyebrow">{{ dish.mealName }} · {{ dish.preparationMinutes }} min</p>
+          <h2 id="recipeTitle">{{ dish.name }}</h2>
+        </div>
+        <button
+          class="icon-button"
+          type="button"
+          aria-label="Cerrar receta"
+          (click)="closeRecipe()"
+        >
+          <app-icon name="close" />
+        </button>
+      </header>
+      <div class="dialog-body recipe-detail">
+        <div class="recipe-hero">
+          @if (dish.imageUrl) {
+            <img [src]="dish.imageUrl" [alt]="dish.name" />
+          } @else {
+            <div class="recipe-placeholder"><app-icon name="dish" />Receta sin fotografía</div>
+          }
+          <dl class="nutrition-panel">
+            <div class="energy">
+              <dt>Energía por porción</dt>
+              <dd>{{ dish.energyKcalPerServing | number: '1.0-0' }} kcal</dd>
+            </div>
+            <div>
+              <dt>Proteína</dt>
+              <dd>{{ dish.proteinGPerServing | number: '1.0-1' }} g</dd>
+              <small>Principal aporte: {{ topContributor(dish, 'proteinG') }}</small>
+            </div>
+            <div>
+              <dt>Carbohidratos</dt>
+              <dd>{{ dish.carbohydrateGPerServing | number: '1.0-1' }} g</dd>
+              <small>Principal aporte: {{ topContributor(dish, 'carbohydrateG') }}</small>
+            </div>
+            <div>
+              <dt>Grasa</dt>
+              <dd>{{ dish.fatGPerServing | number: '1.0-1' }} g</dd>
+              <small>Principal aporte: {{ topContributor(dish, 'fatG') }}</small>
+            </div>
+            <div>
+              <dt>Fibra</dt>
+              <dd>{{ dish.fiberGPerServing | number: '1.0-1' }} g</dd>
+            </div>
+            <div>
+              <dt>Sodio</dt>
+              <dd>{{ dish.sodiumMgPerServing | number: '1.0-0' }} mg</dd>
+            </div>
+          </dl>
+        </div>
+
+        @if (dish.videoUrl) {
+          <section class="recipe-video" aria-labelledby="videoTitle">
+            <h3 id="videoTitle">Video demostrativo</h3>
+            @if (videoEmbedUrl(); as embedUrl) {
+              <iframe
+                [src]="embedUrl"
+                title="Video demostrativo de {{ dish.name }}"
+                loading="lazy"
+                allow="
+                  accelerometer;
+                  autoplay;
+                  clipboard-write;
+                  encrypted-media;
+                  gyroscope;
+                  picture-in-picture;
+                "
+                allowfullscreen
+              ></iframe>
+            } @else if (isDirectVideo(dish.videoUrl)) {
+              <video [src]="dish.videoUrl" controls preload="metadata"></video>
+            } @else {
+              <a
+                class="button button-secondary"
+                [href]="dish.videoUrl"
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                Abrir video demostrativo
+              </a>
+            }
+          </section>
+        }
+
+        <div class="recipe-columns">
+          <section>
+            <h3>Ingredientes para {{ dish.servings }} porciones</h3>
+            <ul class="ingredient-list">
+              @for (ingredient of dish.ingredients; track ingredient.id) {
+                <li>
+                  <span>{{ ingredient.foodName }}</span>
+                  <strong>{{ ingredient.grams | number: '1.0-0' }} g</strong>
+                  <small
+                    >{{ ingredient.portions | number: '1.0-2' }} porciones ·
+                    {{ ingredient.householdMeasure }}</small
+                  >
+                </li>
+              }
+            </ul>
+          </section>
+          <section>
+            <h3>Preparación</h3>
+            <p class="instructions">{{ dish.instructions }}</p>
+            <div class="cost-note">
+              <strong
+                >{{ dish.costPerServingUsd | currency: 'USD' : 'symbol' : '1.2-2' : 'es-EC' }} por
+                porción</strong
+              >
+              <small
+                >Estimación al
+                {{ dish.costReferenceDate | date: 'dd MMM yyyy' : 'UTC' : 'es-EC' }}</small
+              >
+              @if (dish.costNotes) {
+                <p>{{ dish.costNotes }}</p>
+              }
+            </div>
+          </section>
+        </div>
+      </div>
+      <footer class="dialog-footer">
+        <button class="button button-secondary" type="button" (click)="closeRecipe()">
+          Cerrar
+        </button>
+        <a
+          class="button button-primary"
+          routerLink="/menus"
+          [queryParams]="{ dishId: dish.id }"
+          (click)="closeRecipe()"
+        >
+          Añadir al menú
+        </a>
+      </footer>
+    </article>
+  }
+</dialog>
+
+<dialog #archiveDialog class="archive-dialog">
+  <section aria-labelledby="archiveTitle">
+    <header class="dialog-header">
+      <div>
+        <h2 id="archiveTitle">Archivar plato</h2>
+        <p>Esta acción es reversible en la base de datos.</p>
+      </div>
+    </header>
+    <div class="dialog-body">
+      <p>
+        Se ocultará <strong>{{ archiving()?.name }}</strong> de la biblioteca. No se eliminarán sus
+        datos.
+      </p>
+    </div>
+    <footer class="dialog-footer">
+      <button
+        class="button button-secondary"
+        type="button"
+        [disabled]="saving()"
+        (click)="closeArchive()"
+      >
+        Cancelar</button
+      ><button
+        class="button button-warning"
+        type="button"
+        [disabled]="saving()"
+        (click)="confirmArchive()"
+      >
+        {{ saving() ? 'Archivando…' : 'Archivar plato' }}
+      </button>
+    </footer>
+  </section>
+</dialog>

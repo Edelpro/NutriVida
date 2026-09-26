@@ -1,0 +1,28 @@
+@NutriVida.Api_HostAddress = http://localhost:5158
+
+GET {{NutriVida.Api_HostAddress}}/health
+Accept: application/json
+
+###
+
+GET {{NutriVida.Api_HostAddress}}/api/dashboard
+Accept: application/json
+
+###
+
+POST {{NutriVida.Api_HostAddress}}/api/energy/calculate
+Content-Type: application/json
+
+{
+  "patientId": "5687f592-0b31-4431-99a1-7d299c185d4d",
+  "formula": 0,
+  "weightKg": 66.9,
+  "heightCm": 164,
+  "ageYears": 34,
+  "sex": "female",
+  "activityFactor": 1.55,
+  "etaPercent": 0.10,
+  "goalAdjustmentKcal": 0
+}
+
+###

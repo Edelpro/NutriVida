@@ -1,0 +1,247 @@
+<main class="auth-page">
+  <section class="brand-plane" aria-labelledby="brandHeading">
+    <div class="brand-lockup">
+      <img src="/assets/brand/nutrivida-mark-transparent.png" alt="" width="116" height="116" />
+      <div><strong>NutriVida</strong><span>Gestión clínica nutricional</span></div>
+    </div>
+    <div class="brand-message">
+      <h1 id="brandHeading">Nutrición clínica,<br />ordenada y trazable.</h1>
+      <span class="brand-rule" aria-hidden="true"></span>
+      <p>Herramientas profesionales para nutricionistas y equipos que exigen precisión.</p>
+      <div class="security-note">
+        <app-icon name="shield" /><span>Privacidad y seguridad para la práctica diaria.</span>
+      </div>
+    </div>
+    <svg class="leaf-drawing" viewBox="0 0 420 420" aria-hidden="true">
+      <path
+        d="M15 405C110 310 210 222 405 145M135 315C92 266 99 207 164 164c30 73 15 119-29 151ZM241 236c-18-67 21-119 91-139 2 72-30 117-91 139ZM321 181c14 45 5 79-27 105"
+      />
+    </svg>
+  </section>
+
+  <section class="auth-workspace">
+    <div class="auth-canvas" [class.request-active]="mode() === 'request'">
+      <section
+        class="auth-card request-card"
+        [attr.aria-hidden]="mode() !== 'request'"
+        [attr.inert]="mode() !== 'request' ? '' : null"
+      >
+        <form #requestForm="ngForm" novalidate (ngSubmit)="prepareRequest(requestForm)">
+          <header>
+            <h2>Solicitar acceso</h2>
+            <p>La administración de tu clínica crea y activa las cuentas del equipo.</p>
+          </header>
+
+          @if (requestPrepared()) {
+            <div class="request-success" role="status">
+              <span><app-icon name="check" /></span>
+              <h3>Solicitud enviada</h3>
+              <p>La administración ya puede aceptarla o rechazarla en Usuarios y roles.</p>
+              <dl>
+                <div>
+                  <dt>Nombre</dt>
+                  <dd>{{ requestName }}</dd>
+                </div>
+                <div>
+                  <dt>Correo</dt>
+                  <dd>{{ requestEmail }}</dd>
+                </div>
+                <div>
+                  <dt>Rol</dt>
+                  <dd>Nutricionista</dd>
+                </div>
+              </dl>
+              <button class="button button-secondary" type="button" (click)="switchMode('login')">
+                Volver a ingresar
+              </button>
+            </div>
+          } @else {
+            @if (requestError()) {
+              <div class="notice notice-danger auth-error" role="alert">
+                <app-icon name="info" /><span>{{ requestError() }}</span>
+              </div>
+            }
+            <div class="field floating-field">
+              <input
+                id="requestName"
+                name="requestName"
+                [(ngModel)]="requestName"
+                #requestNameModel="ngModel"
+                required
+                minlength="3"
+                maxlength="160"
+                autocomplete="name"
+                placeholder=" "
+                [attr.aria-invalid]="
+                  requestNameModel.invalid && (requestNameModel.touched || requestSubmitted())
+                "
+                [attr.aria-describedby]="
+                  requestNameModel.invalid && (requestNameModel.touched || requestSubmitted())
+                    ? 'requestNameError'
+                    : null
+                "
+              />
+              <label for="requestName">Nombre completo</label>
+              @if (requestNameModel.invalid && (requestNameModel.touched || requestSubmitted())) {
+                <small id="requestNameError" class="field-error"
+                  >Escribe al menos 3 caracteres.</small
+                >
+              } @else {
+                <small>&nbsp;</small>
+              }
+            </div>
+
+            <div class="field floating-field">
+              <input
+                id="requestEmail"
+                name="requestEmail"
+                type="email"
+                [(ngModel)]="requestEmail"
+                #requestEmailModel="ngModel"
+                required
+                email
+                maxlength="180"
+                autocomplete="email"
+                placeholder=" "
+                [attr.aria-invalid]="
+                  requestEmailModel.invalid && (requestEmailModel.touched || requestSubmitted())
+                "
+                [attr.aria-describedby]="
+                  requestEmailModel.invalid && (requestEmailModel.touched || requestSubmitted())
+                    ? 'requestEmailError'
+                    : null
+                "
+              />
+              <label for="requestEmail">Correo institucional</label>
+              @if (requestEmailModel.invalid && (requestEmailModel.touched || requestSubmitted())) {
+                <small id="requestEmailError" class="field-error">Ingresa un correo válido.</small>
+              } @else {
+                <small>&nbsp;</small>
+              }
+            </div>
+
+            <div class="field">
+              <label for="requestRole">Rol solicitado</label>
+              <input id="requestRole" value="Nutricionista" disabled />
+              <small>La aplicación conserva una sola cuenta Administrador.</small>
+            </div>
+
+            <button class="button button-primary auth-submit" type="submit" [disabled]="loading()">
+              @if (loading()) {
+                <span class="spinner button-spinner"></span>
+              }
+              {{ loading() ? 'Enviando…' : 'Enviar solicitud' }}
+            </button>
+          }
+
+          <p class="mode-switch">
+            ¿Ya tienes una cuenta?
+            <button type="button" (click)="switchMode('login')">Ingresar</button>
+          </p>
+        </form>
+      </section>
+
+      <section
+        class="auth-card login-card"
+        [attr.aria-hidden]="mode() !== 'login'"
+        [attr.inert]="mode() !== 'login' ? '' : null"
+      >
+        <form #loginForm="ngForm" novalidate (ngSubmit)="submit(loginForm)">
+          <header>
+            <h2>Bienvenido de nuevo</h2>
+            <p>Accede con la cuenta asignada por tu clínica.</p>
+          </header>
+
+          @if (error()) {
+            <div class="notice notice-danger auth-error" role="alert">
+              <app-icon name="info" /><span>{{ error() }}</span>
+            </div>
+          }
+
+          <div class="field floating-field with-icon">
+            <app-icon name="mail" />
+            <input
+              id="email"
+              name="email"
+              type="email"
+              [(ngModel)]="email"
+              #emailModel="ngModel"
+              required
+              email
+              maxlength="180"
+              autocomplete="username"
+              placeholder=" "
+              [attr.aria-invalid]="emailModel.invalid && (emailModel.touched || loginSubmitted())"
+              [attr.aria-describedby]="
+                emailModel.invalid && (emailModel.touched || loginSubmitted()) ? 'emailError' : null
+              "
+            />
+            <label for="email">Correo institucional</label>
+            @if (emailModel.invalid && (emailModel.touched || loginSubmitted())) {
+              <small id="emailError" class="field-error">Ingresa un correo válido.</small>
+            } @else {
+              <small>&nbsp;</small>
+            }
+          </div>
+
+          <div class="field floating-field with-icon password-field">
+            <app-icon name="lock" />
+            <input
+              id="password"
+              name="password"
+              [type]="showPassword() ? 'text' : 'password'"
+              [(ngModel)]="password"
+              #passwordModel="ngModel"
+              required
+              minlength="8"
+              maxlength="200"
+              autocomplete="current-password"
+              placeholder=" "
+              [attr.aria-invalid]="
+                passwordModel.invalid && (passwordModel.touched || loginSubmitted())
+              "
+              [attr.aria-describedby]="
+                passwordModel.invalid && (passwordModel.touched || loginSubmitted())
+                  ? 'passwordError'
+                  : null
+              "
+            />
+            <label for="password">Contraseña</label>
+            <button
+              type="button"
+              class="reveal-password"
+              [attr.aria-pressed]="showPassword()"
+              [attr.aria-label]="showPassword() ? 'Ocultar contraseña' : 'Mostrar contraseña'"
+              (click)="showPassword.set(!showPassword())"
+            >
+              <app-icon [name]="showPassword() ? 'eyeOff' : 'eye'" />
+              <span>{{ showPassword() ? 'Ocultar' : 'Mostrar' }}</span>
+            </button>
+            @if (passwordModel.invalid && (passwordModel.touched || loginSubmitted())) {
+              <small id="passwordError" class="field-error"
+                >Escribe una contraseña de al menos 8 caracteres.</small
+              >
+            } @else {
+              <small>&nbsp;</small>
+            }
+          </div>
+
+          <button class="button button-primary auth-submit" type="submit" [disabled]="loading()">
+            @if (loading()) {
+              <span class="spinner button-spinner"></span>
+            }
+            {{ loading() ? 'Ingresando…' : 'Ingresar' }}
+          </button>
+
+          <p class="mode-switch">
+            ¿Necesitas una cuenta?
+            <button type="button" (click)="switchMode('request')">Solicitar acceso</button>
+          </p>
+          <p class="protected-copy">
+            <app-icon name="shield" />Tus datos se transmiten de forma protegida.
+          </p>
+        </form>
+      </section>
+    </div>
+  </section>
+</main>

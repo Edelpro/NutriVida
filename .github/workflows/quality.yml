@@ -1,0 +1,62 @@
+name: Calidad
+
+on:
+  push:
+    branches: [master, main]
+  pull_request:
+    branches: [master, main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: quality-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    name: Backend .NET
+    runs-on: ubuntu-latest
+    steps:
+      - name: Descargar código
+        uses: actions/checkout@v4
+
+      - name: Configurar .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Restaurar
+        run: dotnet restore backend/NutriVida.sln
+
+      - name: Compilar
+        run: dotnet build backend/NutriVida.sln --configuration Release --no-restore
+
+      - name: Probar
+        run: dotnet test backend/NutriVida.sln --configuration Release --no-build
+
+  frontend:
+    name: Frontend Angular
+    runs-on: ubuntu-latest
+    steps:
+      - name: Descargar código
+        uses: actions/checkout@v4
+
+      - name: Configurar Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Instalar dependencias
+        working-directory: frontend
+        run: npm ci
+
+      - name: Probar
+        working-directory: frontend
+        run: npm test -- --watch=false
+
+      - name: Compilar
+        working-directory: frontend
+        run: npm run build

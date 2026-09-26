@@ -1,0 +1,250 @@
+:host {
+  display: block;
+  min-height: 100vh;
+}
+
+.app-shell {
+  min-height: 100vh;
+  display: grid;
+  grid-template-columns: var(--sidebar-width) minmax(0, 1fr);
+}
+
+.sidebar {
+  position: fixed;
+  inset: 0 auto 0 0;
+  z-index: 30;
+  width: var(--sidebar-width);
+  padding: 1.15rem 0.75rem;
+  display: flex;
+  flex-direction: column;
+  background: var(--surface);
+  border-right: 1px solid var(--border);
+}
+
+.brand {
+  min-height: 7.1rem;
+  padding: 0.1rem 0.5rem 1rem;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  color: var(--text);
+  text-decoration: none;
+}
+
+.brand-mark {
+  width: 4.25rem;
+  height: 3.7rem;
+  background: url('/assets/brand/nutrivida-mark-transparent.png') center / contain no-repeat;
+}
+
+.brand strong {
+  display: block;
+  font: 700 1.42rem/1 var(--font-display);
+  letter-spacing: -0.02em;
+}
+
+.brand small,
+.clinic small {
+  display: block;
+  margin-top: 0.25rem;
+  color: var(--text-muted);
+  font-size: 0.65rem;
+}
+
+nav {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: grid;
+  gap: 0.7rem;
+  overflow-y: auto;
+  scrollbar-gutter: stable;
+}
+
+.nav-group {
+  display: grid;
+  gap: 0.13rem;
+}
+
+.nav-group-label {
+  margin: 0;
+  padding: 0.2rem 0.68rem 0.15rem;
+  color: var(--text-muted);
+  font-size: 0.61rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+nav a,
+.sidebar-footer > a,
+.sidebar-action {
+  min-height: 2.45rem;
+  padding: 0.58rem 0.68rem;
+  display: flex;
+  align-items: center;
+  gap: 0.68rem;
+  color: var(--text-muted);
+  border-radius: 0.45rem;
+  font-size: 0.76rem;
+  line-height: 1.25;
+  font-weight: 550;
+  text-decoration: none;
+  transition:
+    background var(--motion),
+    color var(--motion);
+}
+
+nav a span,
+.sidebar-footer > a span,
+.sidebar-action span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.sidebar-logout {
+  margin: 0;
+}
+
+nav a:hover,
+.sidebar-footer > a:hover,
+.sidebar-action:hover {
+  color: var(--text);
+  background: var(--surface-muted);
+}
+
+nav a.active,
+.sidebar-footer > a.active {
+  color: var(--primary-dark);
+  background: linear-gradient(90deg, #edf6d3, #e4efbd);
+  box-shadow: inset 3px 0 0 var(--primary);
+}
+
+nav app-icon,
+.sidebar-footer app-icon {
+  width: 1.05rem;
+  height: 1.05rem;
+}
+
+.sidebar-action {
+  width: 100%;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  text-align: left;
+  font-family: inherit;
+}
+
+.sidebar-action app-icon {
+  transform: rotate(180deg);
+}
+
+.clinic span:last-child {
+  min-width: 0;
+}
+
+.clinic strong,
+.clinic small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sidebar-footer {
+  flex: 0 0 auto;
+  margin-top: 0.65rem;
+  display: grid;
+  gap: 0.7rem;
+}
+
+.clinic {
+  padding: 0.75rem 0.35rem 0;
+  display: flex;
+  align-items: center;
+  gap: 0.58rem;
+  border-top: 1px solid var(--border);
+  font-size: 0.68rem;
+}
+
+.clinic strong {
+  display: block;
+}
+
+.clinic-mark {
+  width: 2.15rem;
+  height: 2.15rem;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  color: white;
+  background: var(--primary);
+}
+
+.workspace {
+  grid-column: 2;
+  min-width: 0;
+}
+
+.mobile-topbar {
+  display: none;
+}
+
+.mobile-brand {
+  color: var(--text);
+  font: 700 1.15rem/1 var(--font-display);
+  text-decoration: none;
+}
+
+.sidebar-scrim {
+  display: none;
+}
+
+main {
+  min-height: 100vh;
+}
+
+@media (max-width: 900px) {
+  .app-shell {
+    display: block;
+  }
+
+  .workspace {
+    grid-column: auto;
+  }
+
+  .sidebar {
+    transform: translateX(-102%);
+    box-shadow: 18px 0 45px rgba(59, 35, 15, 0.16);
+    transition: transform 220ms ease;
+  }
+
+  .sidebar.is-open {
+    transform: translateX(0);
+  }
+
+  .sidebar-scrim {
+    position: fixed;
+    inset: 0;
+    z-index: 25;
+    display: block;
+    border: 0;
+    background: rgba(59, 35, 15, 0.34);
+  }
+
+  .mobile-topbar {
+    height: 3.6rem;
+    padding: 0 1rem;
+    display: flex;
+    align-items: center;
+    gap: 0.55rem;
+    position: sticky;
+    top: 0;
+    z-index: 20;
+    background: rgba(255, 255, 255, 0.96);
+    border-bottom: 1px solid var(--border);
+  }
+
+  main {
+    min-height: calc(100vh - 3.6rem);
+  }
+}

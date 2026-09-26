@@ -1,0 +1,464 @@
+<div class="page users-page">
+  <header class="page-header users-heading">
+    <div>
+      <h1>Usuarios y roles</h1>
+      <p class="lede">Administra el acceso del equipo sin exponer información clínica.</p>
+    </div>
+    <button class="button button-primary" type="button" (click)="openCreate()">
+      <app-icon name="userPlus" />
+      Crear usuario
+    </button>
+  </header>
+
+  <section class="surface access-requests" aria-labelledby="accessRequestsTitle">
+    <header class="surface-header">
+      <div>
+        <p class="eyebrow">Acceso al equipo</p>
+        <h2 id="accessRequestsTitle">Solicitudes pendientes</h2>
+        <p>Revisa cada petición. Aprobar crea únicamente una cuenta Nutricionista.</p>
+      </div>
+      <div class="request-summary-actions">
+        <span class="badge">{{ accessRequests().length }} pendientes</span>
+        <button
+          class="button button-quiet button-small"
+          type="button"
+          [disabled]="requestsLoading()"
+          (click)="refreshAccessRequests()"
+        >
+          <app-icon name="refresh" />
+          {{ requestsLoading() ? 'Actualizando…' : 'Actualizar solicitudes' }}
+        </button>
+      </div>
+    </header>
+    @if (requestsLoading()) {
+      <div class="request-state"><span class="spinner"></span>Cargando solicitudes…</div>
+    } @else if (requestsError()) {
+      <div class="request-state request-state-error" role="alert">
+        <app-icon name="info" />
+        <span><strong>No se pudieron consultar las solicitudes.</strong>{{ requestsError() }}</span>
+        <button class="button button-secondary button-small" type="button" (click)="refreshAccessRequests()">
+          Reintentar
+        </button>
+      </div>
+    } @else if (accessRequests().length === 0) {
+      <div class="request-state">
+        <app-icon name="check" />No hay solicitudes por revisar.
+      </div>
+    } @else {
+      <div class="request-list">
+        @for (request of accessRequests(); track request.id) {
+          <article class="request-row">
+            <span class="user-avatar">{{ request.fullName.slice(0, 1).toUpperCase() }}</span>
+            <div>
+              <strong>{{ request.fullName }}</strong>
+              <span>{{ request.email }}</span>
+              <small>Solicita el rol Nutricionista</small>
+            </div>
+            <div class="request-actions">
+              @if (rejectingRequestId() === request.id) {
+                <span class="request-confirmation">¿Rechazar sin crear la cuenta?</span>
+                <button class="button button-secondary button-small" type="button" (click)="cancelRejection()">
+                  Cancelar
+                </button>
+                <button
+                  class="button button-danger button-small"
+                  type="button"
+                  [disabled]="requestActionId() === request.id"
+                  (click)="confirmReject(request)"
+                >
+                  {{ requestActionId() === request.id ? 'Rechazando…' : 'Confirmar rechazo' }}
+                </button>
+              } @else {
+                <button class="button button-secondary button-small" type="button" (click)="requestRejection(request.id)">
+                  Rechazar
+                </button>
+                <button class="button button-primary button-small" type="button" (click)="openApproval(request)">
+                  Aceptar y crear cuenta
+                </button>
+              }
+            </div>
+          </article>
+        }
+      </div>
+    }
+  </section>
+
+  <section class="users-toolbar" aria-label="Filtros de usuarios">
+    <div class="field search-field">
+      <label for="userSearch">Buscar usuarios</label>
+      <div class="search-control">
+        <app-icon name="search" />
+        <input
+          #searchInput
+          id="userSearch"
+          type="search"
+          name="userSearch"
+          [ngModel]="query"
+          (ngModelChange)="onSearch($event)"
+          autocomplete="off"
+          placeholder="Buscar por nombre o correo"
+        />
+        @if (query) {
+          <button
+            type="button"
+            class="clear-search"
+            aria-label="Limpiar búsqueda"
+            (click)="clearSearch(searchInput)"
+          >
+            <app-icon name="close" />
+          </button>
+        }
+      </div>
+    </div>
+    <div class="field status-filter">
+      <label for="userStatus">Estado</label>
+      <select id="userStatus" name="userStatus" [(ngModel)]="status" (change)="applyStatus()">
+        <option value="">Todos</option>
+        <option value="active">Activos</option>
+        <option value="inactive">Inactivos</option>
+      </select>
+    </div>
+  </section>
+
+  @if (error()) {
+    <div class="notice notice-danger connection-error" role="alert">
+      <app-icon name="info" />
+      <span><strong>No se pudieron cargar los usuarios</strong>{{ error() }}</span>
+      <button class="button button-secondary button-small" type="button" (click)="retry()">
+        Reintentar
+      </button>
+    </div>
+  }
+
+  <section
+    class="surface users-table"
+    aria-labelledby="usersTableTitle"
+    [attr.aria-busy]="loading()"
+  >
+    <h2 id="usersTableTitle" class="sr-only">Listado de usuarios del consultorio</h2>
+    <div class="data-table-wrap">
+      <table class="data-table">
+        <caption class="sr-only">
+          Cuentas del equipo, roles, estado y último acceso
+        </caption>
+        <thead>
+          <tr>
+            <th scope="col">Usuario</th>
+            <th scope="col">Correo</th>
+            <th scope="col">Rol</th>
+            <th scope="col">Estado</th>
+            <th scope="col">Último acceso</th>
+            <th scope="col">Acciones</th>
+          </tr>
+        </thead>
+        <tbody>
+          @if (loading()) {
+            <tr class="status-row">
+              <td colspan="6">
+                <span class="loading-line"><span class="spinner"></span>Cargando usuarios…</span>
+              </td>
+            </tr>
+          } @else if (!error() && users().length === 0) {
+            <tr class="status-row">
+              <td colspan="6">
+                <div class="table-empty">
+                  <app-icon name="users" />
+                  <strong>{{
+                    query || status ? 'No hay coincidencias' : 'Aún no hay usuarios'
+                  }}</strong>
+                  <span>{{
+                    query || status
+                      ? 'Limpia los filtros para ver todas las cuentas.'
+                      : 'Crea la primera cuenta del equipo.'
+                  }}</span>
+                </div>
+              </td>
+            </tr>
+          } @else {
+            @for (user of users(); track user.id) {
+              <tr>
+                <td>
+                  <div class="user-cell">
+                    <span class="user-avatar">{{ user.fullName.slice(0, 1).toUpperCase() }}</span>
+                    <span
+                      ><strong>{{ user.fullName }}</strong>
+                      @if (isCurrentUser(user)) {
+                        <small>Tu cuenta</small>
+                      }
+                    </span>
+                  </div>
+                </td>
+                <td class="email-cell">{{ user.email }}</td>
+                <td>
+                  <span class="role-label">{{ roleLabel(user.role) }}</span>
+                </td>
+                <td>
+                  <span class="status-label" [class.inactive]="!user.isActive">
+                    <i aria-hidden="true"></i>{{ user.isActive ? 'Activo' : 'Inactivo' }}
+                  </span>
+                </td>
+                <td>{{ formatLastAccess(user.lastLoginAtUtc) }}</td>
+                <td>
+                  <button
+                    class="button button-quiet button-small"
+                    type="button"
+                    (click)="openEdit(user)"
+                  >
+                    <app-icon name="edit" />Editar
+                  </button>
+                </td>
+              </tr>
+            }
+          }
+        </tbody>
+      </table>
+    </div>
+    <nav class="pagination" aria-label="Paginación de usuarios">
+      <span>{{ rangeStart() }}–{{ rangeEnd() }} de {{ total() }}</span>
+      <div class="pagination-actions">
+        <button
+          class="icon-button"
+          type="button"
+          aria-label="Página anterior"
+          [disabled]="page() <= 1 || loading()"
+          (click)="changePage(page() - 1)"
+        >
+          <app-icon name="arrow" />
+        </button>
+        <span aria-current="page">{{ page() }}</span>
+        <button
+          class="icon-button"
+          type="button"
+          aria-label="Página siguiente"
+          [disabled]="page() >= totalPages() || loading()"
+          (click)="changePage(page() + 1)"
+        >
+          <app-icon name="arrow" />
+        </button>
+      </div>
+    </nav>
+  </section>
+</div>
+
+<dialog #userDialog class="user-dialog" (close)="resetDialogState()">
+  <form #userForm="ngForm" novalidate (ngSubmit)="requestSave(userForm)">
+    <header class="dialog-header">
+      <div>
+        <h2>{{ selectedAccessRequest() ? 'Aprobar solicitud' : editingUser() ? 'Editar usuario' : 'Crear usuario' }}</h2>
+        <p>
+          {{
+            selectedAccessRequest()
+              ? 'Confirma los datos y asigna una contraseña temporal.'
+              : editingUser()
+              ? 'Actualiza el acceso y los permisos de la cuenta.'
+              : 'Crea una cuenta segura para un integrante del equipo.'
+          }}
+        </p>
+      </div>
+      <button class="icon-button" type="button" aria-label="Cerrar" (click)="closeDialog()">
+        <app-icon name="close" />
+      </button>
+    </header>
+
+    <div class="dialog-body">
+      @if (formError()) {
+        <div class="notice notice-danger" role="alert">
+          <app-icon name="info" />{{ formError() }}
+        </div>
+      }
+
+      @if (confirming()) {
+        <section class="confirmation" aria-labelledby="confirmationTitle">
+          <span class="confirmation-icon"><app-icon name="shield" /></span>
+          <h3 id="confirmationTitle">Confirma el acceso</h3>
+          <p>
+            {{ editingUser() ? 'Se actualizará' : selectedAccessRequest() ? 'Se aprobará la solicitud y se creará' : 'Se creará' }} la cuenta de
+            <strong>{{ model.fullName }}</strong> con el rol
+            <strong>{{ roleLabel(model.role) }}</strong
+            >.
+          </p>
+          @if (editingUser() && !model.isActive) {
+            <p class="notice notice-warning">
+              La cuenta quedará inactiva y no podrá iniciar sesión.
+            </p>
+          }
+        </section>
+      } @else {
+        <div class="user-form-grid">
+          <div class="field">
+            <label class="required" for="fullName">Nombre completo</label>
+            <input
+              id="fullName"
+              name="fullName"
+              [(ngModel)]="model.fullName"
+              #fullName="ngModel"
+              required
+              minlength="3"
+              maxlength="160"
+              autocomplete="name"
+              [attr.aria-invalid]="fullName.invalid && (fullName.touched || submitted())"
+              [attr.aria-describedby]="
+                fullName.invalid && (fullName.touched || submitted())
+                  ? 'fullNameError'
+                  : 'fullNameHelp'
+              "
+            />
+            @if (fullName.invalid && (fullName.touched || submitted())) {
+              <small id="fullNameError" class="field-error">Escribe al menos 3 caracteres.</small>
+            } @else {
+              <small id="fullNameHelp">Nombre que aparecerá en el sistema.</small>
+            }
+          </div>
+
+          <div class="field">
+            <label class="required" for="userEmail">Correo institucional</label>
+            <input
+              id="userEmail"
+              name="email"
+              type="email"
+              [(ngModel)]="model.email"
+              #email="ngModel"
+              required
+              email
+              maxlength="180"
+              autocomplete="email"
+              [readonly]="!!editingUser()"
+              [attr.aria-invalid]="email.invalid && (email.touched || submitted())"
+              [attr.aria-describedby]="
+                email.invalid && (email.touched || submitted()) ? 'userEmailError' : 'userEmailHelp'
+              "
+            />
+            @if (email.invalid && (email.touched || submitted())) {
+              <small id="userEmailError" class="field-error">Ingresa un correo válido.</small>
+            } @else {
+              <small id="userEmailHelp">{{
+                selectedAccessRequest()
+                  ? 'Correo recibido en la solicitud. Se utilizará para iniciar sesión.'
+                  : editingUser()
+                  ? 'El correo no se cambia desde esta pantalla.'
+                  : 'Se utilizará para iniciar sesión.'
+              }}</small>
+            }
+          </div>
+
+          <div class="field">
+            <label class="required" for="userRole">Rol</label>
+            <input id="userRole" [value]="roleLabel(model.role)" disabled />
+            <small>
+              {{
+                editingUser()?.role === 'ClinicAdmin'
+                  ? 'Cuenta Administrador única y protegida.'
+                  : 'Las cuentas del equipo se registran únicamente como Nutricionista.'
+              }}
+            </small>
+          </div>
+
+          <div class="field">
+            <label [class.required]="!editingUser()" for="temporaryPassword"
+              >Contraseña temporal</label
+            >
+            <div class="password-control">
+              <input
+                id="temporaryPassword"
+                name="temporaryPassword"
+                [type]="showPassword() ? 'text' : 'password'"
+                [(ngModel)]="model.temporaryPassword"
+                #temporaryPassword="ngModel"
+                [required]="!editingUser()"
+                minlength="12"
+                maxlength="200"
+                autocomplete="new-password"
+                [attr.aria-invalid]="
+                  temporaryPassword.invalid && (temporaryPassword.touched || submitted())
+                "
+                [attr.aria-describedby]="
+                  temporaryPassword.invalid && (temporaryPassword.touched || submitted())
+                    ? 'temporaryPasswordError'
+                    : 'temporaryPasswordHelp'
+                "
+              />
+              <button
+                type="button"
+                class="password-toggle"
+                [attr.aria-pressed]="showPassword()"
+                [attr.aria-label]="showPassword() ? 'Ocultar contraseña' : 'Mostrar contraseña'"
+                (click)="showPassword.set(!showPassword())"
+              >
+                <app-icon [name]="showPassword() ? 'eyeOff' : 'eye'" /><span>{{
+                  showPassword() ? 'Ocultar' : 'Mostrar'
+                }}</span>
+              </button>
+            </div>
+            @if (temporaryPassword.invalid && (temporaryPassword.touched || submitted())) {
+              <small id="temporaryPasswordError" class="field-error"
+                >Usa al menos 12 caracteres.</small
+              >
+            } @else {
+              <small id="temporaryPasswordHelp">{{
+                editingUser() ? 'Déjala vacía para conservar la actual.' : 'Mínimo 12 caracteres.'
+              }}</small>
+            }
+          </div>
+
+          @if (editingUser()) {
+            <label
+              class="check-line account-status"
+              [class.is-disabled]="isCurrentUser(editingUser()!)"
+            >
+              <input
+                type="checkbox"
+                name="isActive"
+                [(ngModel)]="model.isActive"
+                [disabled]="isCurrentUser(editingUser()!)"
+              />
+              <span
+                ><strong>Cuenta activa</strong
+                ><small>{{
+                  isCurrentUser(editingUser()!)
+                    ? 'No puedes desactivar tu propia cuenta.'
+                    : 'Una cuenta inactiva no puede iniciar sesión.'
+                }}</small></span
+              >
+            </label>
+          }
+
+          <label class="check-line account-status">
+            <input
+              type="checkbox"
+              name="mustChangePassword"
+              [(ngModel)]="model.mustChangePassword"
+            />
+            <span
+              ><strong>Solicitar cambio de contraseña al ingresar</strong
+              ><small>Recomendado para contraseñas temporales.</small></span
+            >
+          </label>
+        </div>
+      }
+    </div>
+
+    <footer class="dialog-footer">
+      @if (confirming()) {
+        <button
+          class="button button-secondary"
+          type="button"
+          [disabled]="saving()"
+          (click)="confirming.set(false)"
+        >
+          Volver
+        </button>
+        <button class="button button-primary" type="button" [disabled]="saving()" (click)="save()">
+          @if (saving()) {
+            <span class="spinner button-spinner"></span>
+          }
+          {{ saving() ? 'Guardando…' : editingUser() ? 'Guardar cambios' : selectedAccessRequest() ? 'Aprobar y crear cuenta' : 'Crear usuario' }}
+        </button>
+      } @else {
+        <button class="button button-secondary" type="button" (click)="closeDialog()">
+          Cancelar
+        </button>
+        <button class="button button-primary" type="submit">Continuar</button>
+      }
+    </footer>
+  </form>
+</dialog>
