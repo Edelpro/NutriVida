@@ -20,12 +20,23 @@ public sealed class FoodsController(NutriVidaDbContext db) : ControllerBase
         page = Math.Max(1, page);
         pageSize = Math.Clamp(pageSize, 10, 100);
         var query = db.FoodItems.AsNoTracking().Where(x => !x.IsArchived);
-        if (!string.IsNullOrWhiteSpace(q)) query = query.Where(x => x.Name.Contains(q) || x.Group.Contains(q));
+        if (!string.IsNullOrWhiteSpace(q))
+        {
+            var term = q.Trim();
+            query = query.Where(x => EF.Functions.Collate(x.Name, "Latin1_General_CI_AI").Contains(term)
+                || EF.Functions.Collate(x.Group, "Latin1_General_CI_AI").Contains(term));
+        }
         if (source.HasValue) query = query.Where(x => x.Source == source);
         var total = await query.CountAsync(cancellationToken);
         var items = await query.OrderBy(x => x.Name).Skip((page - 1) * pageSize).Take(pageSize).ToListAsync(cancellationToken);
-        return Ok(new { items, page, pageSize, total, notice = "Las filas EcuadorDemo son solo demostrativas y no deben usarse clínicamente." });
+        return Ok(new { items, page, pageSize, total, totalPages = Math.Max(1, (int)Math.Ceiling(total / (double)pageSize)), notice = "Las filas EcuadorDemo son solo demostrativas y no deben usarse clínicamente." });
     }
+
+    /// <summary>Catálogo completo para los selectores de Platos y Menús, que lo filtran en el navegador.</summary>
+    [HttpGet("options")]
+    public async Task<IActionResult> Options(CancellationToken cancellationToken) =>
+        Ok(await db.FoodItems.AsNoTracking().Where(x => !x.IsArchived)
+            .OrderBy(x => x.Name).ToListAsync(cancellationToken));
 
     [HttpPost]
     [Authorize(Roles = "Nutritionist,ClinicAdmin")]
@@ -130,7 +141,9 @@ public sealed class FoodsController(NutriVidaDbContext db) : ControllerBase
         using var reader = new StreamReader(memory);
         var headerLine = await reader.ReadLineAsync(cancellationToken);
         if (headerLine is null) return ValidationProblem("El archivo está vacío.");
-        var headers = ParseCsvLine(headerLine).Select((name, index) => new { Name = name.Trim(), Index = index })
+        // Excel en español guarda con punto y coma y coma decimal: ahí la coma no es ambigua.
+        var delimiter = headerLine.Contains(';') && !headerLine.Contains(',') ? ';' : ',';
+        var headers = ParseCsvLine(headerLine, delimiter).Select((name, index) => new { Name = name.Trim(), Index = index })
             .ToDictionary(x => x.Name, x => x.Index, StringComparer.OrdinalIgnoreCase);
         var required = new[] { "source_code", "name", "group", "portion_grams", "household_measure",
             "energy_kcal", "protein_g", "carbohydrate_g", "fat_g", "fiber_g", "sodium_mg" };
@@ -148,35 +161,40 @@ public sealed class FoodsController(NutriVidaDbContext db) : ControllerBase
             if (string.IsNullOrWhiteSpace(line)) continue;
             if (rows.Count >= 10_000)
                 return UnprocessableEntity(new { title = "Importación rechazada", errors = new[] { "El archivo supera el máximo de 10.000 filas." } });
-            var values = ParseCsvLine(line);
+            var values = ParseCsvLine(line, delimiter);
             try
             {
                 string Text(string key) => values[headers[key]].Trim();
-                decimal Number(string key) => decimal.Parse(Text(key), NumberStyles.Number, CultureInfo.InvariantCulture);
+                decimal Number(string key, decimal max) => FoodCsvNumber.Parse(Text(key), key, max, delimiter == ';');
                 var item = new FoodItem
                 {
                     SourceCode = Text("source_code"),
                     Source = source,
                     Name = Text("name"),
                     Group = Text("group"),
-                    PortionGrams = Number("portion_grams"),
+                    ExchangeGroup = headers.ContainsKey("exchange_group") ? Text("exchange_group") : string.Empty,
+                    PortionGrams = Number("portion_grams", 5000),
                     HouseholdMeasure = Text("household_measure"),
-                    EnergyKcal = Number("energy_kcal"),
-                    ProteinG = Number("protein_g"),
-                    CarbohydrateG = Number("carbohydrate_g"),
-                    FatG = Number("fat_g"),
-                    FiberG = Number("fiber_g"),
-                    SodiumMg = Number("sodium_mg"),
+                    EnergyKcal = Number("energy_kcal", 10000),
+                    ProteinG = Number("protein_g", 1000),
+                    CarbohydrateG = Number("carbohydrate_g", 1000),
+                    FatG = Number("fat_g", 1000),
+                    FiberG = Number("fiber_g", 1000),
+                    SodiumMg = Number("sodium_mg", 100000),
                     SourceEdition = sourceEdition.Trim(),
                     SourceReference = sourceReference.Trim()
                 };
                 if (string.IsNullOrWhiteSpace(item.SourceCode) || string.IsNullOrWhiteSpace(item.Name)
-                    || string.IsNullOrWhiteSpace(item.Group) || item.PortionGrams <= 0
-                    || new[] { item.EnergyKcal, item.ProteinG, item.CarbohydrateG, item.FatG, item.FiberG, item.SodiumMg }.Any(x => x < 0))
-                    throw new FormatException("Código, nombre, grupo, porción o nutrientes no válidos.");
+                    || string.IsNullOrWhiteSpace(item.Group) || item.PortionGrams <= 0)
+                    throw new FormatException("Código, nombre, grupo o porción no válidos.");
                 rows.Add(item);
             }
-            catch (Exception ex) when (ex is FormatException or IndexOutOfRangeException)
+            catch (ArgumentOutOfRangeException)
+            {
+                errors.Add($"Fila {lineNumber}: faltan columnas.");
+                if (errors.Count == 50) break;
+            }
+            catch (FormatException ex)
             {
                 errors.Add($"Fila {lineNumber}: {ex.Message}");
                 if (errors.Count == 50) break;
@@ -197,7 +215,7 @@ public sealed class FoodsController(NutriVidaDbContext db) : ControllerBase
             if (!existing.TryGetValue(row.SourceCode, out var current)) db.FoodItems.Add(row);
             else
             {
-                current.Name = row.Name; current.Group = row.Group; current.PortionGrams = row.PortionGrams;
+                current.Name = row.Name; current.Group = row.Group; current.ExchangeGroup = row.ExchangeGroup; current.PortionGrams = row.PortionGrams;
                 current.HouseholdMeasure = row.HouseholdMeasure; current.EnergyKcal = row.EnergyKcal;
                 current.ProteinG = row.ProteinG; current.CarbohydrateG = row.CarbohydrateG;
                 current.FatG = row.FatG; current.FiberG = row.FiberG; current.SodiumMg = row.SodiumMg;
@@ -242,11 +260,11 @@ public sealed class FoodsController(NutriVidaDbContext db) : ControllerBase
     [Authorize(Roles = "ClinicAdmin")]
     public IActionResult ImportTemplate()
     {
-        const string csv = "source_code,name,group,portion_grams,household_measure,energy_kcal,protein_g,carbohydrate_g,fat_g,fiber_g,sodium_mg\r\n";
+        const string csv = "source_code,name,group,portion_grams,household_measure,energy_kcal,protein_g,carbohydrate_g,fat_g,fiber_g,sodium_mg,exchange_group\r\n";
         return File(System.Text.Encoding.UTF8.GetBytes(csv), "text/csv; charset=utf-8", "plantilla-catalogo-nutrivida.csv");
     }
 
-    private static List<string> ParseCsvLine(string line)
+    private static List<string> ParseCsvLine(string line, char delimiter)
     {
         var values = new List<string>();
         var current = new System.Text.StringBuilder();
@@ -259,11 +277,33 @@ public sealed class FoodsController(NutriVidaDbContext db) : ControllerBase
                 current.Append('"'); i++; continue;
             }
             if (character == '"') { quoted = !quoted; continue; }
-            if (character == ',' && !quoted) { values.Add(current.ToString()); current.Clear(); continue; }
+            if (character == delimiter && !quoted) { values.Add(current.ToString()); current.Clear(); continue; }
             current.Append(character);
         }
         values.Add(current.ToString());
         return values;
+    }
+}
+
+public static class FoodCsvNumber
+{
+    /// <summary>
+    /// Solo admite punto decimal: con separador de miles, "1,5" se leería como 15 sin ningún aviso.
+    /// </summary>
+    public static decimal Parse(string text, string column, decimal max, bool decimalComma = false)
+    {
+        if (decimalComma)
+        {
+            // "1.500" podría ser 1500 o 1,5: se rechaza en vez de adivinar.
+            if (text.Contains('.'))
+                throw new FormatException($"{column} debe usar coma decimal y no llevar puntos: \"{text}\".");
+            text = text.Replace(',', '.');
+        }
+        if (!decimal.TryParse(text, NumberStyles.AllowDecimalPoint, CultureInfo.InvariantCulture, out var value))
+            throw new FormatException($"{column} debe ser un número con un solo separador decimal, sin signos: \"{text}\".");
+        if (value > max)
+            throw new FormatException($"{column} no puede superar {max.ToString(CultureInfo.InvariantCulture)}: \"{text}\".");
+        return value;
     }
 }
 

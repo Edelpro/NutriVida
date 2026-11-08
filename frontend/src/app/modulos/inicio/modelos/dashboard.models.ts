@@ -3,6 +3,7 @@ export interface DashboardAppointment {
   patientId: string;
   patientName: string;
   startsAtUtc: string;
+  durationMinutes: number;
   reason: string;
   status: string;
 }

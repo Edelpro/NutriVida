@@ -53,30 +53,32 @@ import { DashboardData, EMPTY_DASHBOARD } from '../../modelos/dashboard.models';
         <div class="status-message" aria-live="polite">
           <span class="spinner" aria-label="Cargando el panel clínico"></span>
         </div>
-      } @else {
+      } @else if (!error()) {
         <div class="dashboard-layout">
           <section class="surface agenda-card">
             <header class="card-heading">
-              <h2><app-icon name="calendar" /> Agenda de hoy</h2>
+              <h2><app-icon name="calendar" /> Próximas atenciones</h2>
             </header>
             <div class="agenda-list">
               @for (appointment of data().appointments; track appointment.id) {
                 <article [class.is-next]="$first">
                   <time [attr.datetime]="appointment.startsAtUtc">
                     <strong>{{ appointment.startsAtUtc | date: 'HH:mm' }}</strong>
-                    <small>{{ endTime(appointment.startsAtUtc) }}</small>
+                    <small>{{ endTime(appointment.startsAtUtc, appointment.durationMinutes) }}</small>
                   </time>
                   <span class="agenda-dot" aria-hidden="true"></span>
                   <div>
                     <strong>{{ appointment.patientName }}</strong>
-                    <small>{{ appointment.reason || 'Consulta nutricional' }}</small>
+                    <small>
+                      {{ dayLabel(appointment.startsAtUtc) }}{{ appointment.reason || 'Consulta nutricional' }}
+                    </small>
                   </div>
                 </article>
               } @empty {
                 <div class="compact-empty">
                   <app-icon name="calendar" />
                   <strong>Agenda libre</strong>
-                  <span>No hay atenciones programadas para hoy.</span>
+                  <span>No hay atenciones en los próximos 3 días.</span>
                 </div>
               }
             </div>
@@ -85,10 +87,10 @@ import { DashboardData, EMPTY_DASHBOARD } from '../../modelos/dashboard.models';
             /></a>
           </section>
 
-          <section class="patient-current" aria-label="Paciente actual">
+          <section class="patient-current" aria-label="Paciente en foco">
             <span class="leaf leaf-one" aria-hidden="true"></span>
             <span class="leaf leaf-two" aria-hidden="true"></span>
-            <p>Paciente actual</p>
+            <p>Paciente en foco</p>
             @if (data().currentPatient; as patient) {
               <h2>{{ patient.fullName }}</h2>
               <small>C.I. {{ patient.documentNumber }} · {{ patient.ageYears }} años</small>
@@ -114,10 +116,10 @@ import { DashboardData, EMPTY_DASHBOARD } from '../../modelos/dashboard.models';
                     >{{
                       patient.bodyFatPercent === null
                         ? '—'
-                        : (patient.bodyFatPercent | number: '1.1-1')
-                    }}<em>%</em></strong
+                        : (patient.bodyFatPercent | number: '1.1-1') + ' %'
+                    }}</strong
                   >
-                  <small>Última medición</small>
+                  <small>{{ patient.bodyFatPercent === null ? 'Sin registro' : 'Última medición' }}</small>
                 </div>
               </div>
               <div class="therapeutic-goal">
@@ -126,14 +128,14 @@ import { DashboardData, EMPTY_DASHBOARD } from '../../modelos/dashboard.models';
               </div>
               <div class="plan-progress">
                 <span
-                  ><strong>Progreso del plan</strong
-                  ><b>{{ patient.adherencePercent ?? 0 }}%</b></span
+                  ><strong>Adherencia al plan</strong
+                  ><b>{{ patient.adherencePercent === null ? 'Sin registro' : patient.adherencePercent + '%' }}</b></span
                 >
                 <div class="progress">
                   <span [style.width.%]="patient.adherencePercent ?? 0"></span>
                 </div>
               </div>
-              <a class="patient-action" routerLink="/evaluaciones">
+              <a class="patient-action" [routerLink]="['/pacientes', patient.id]">
                 Ver ficha del paciente <app-icon name="arrow" />
               </a>
             } @else {
@@ -193,7 +195,7 @@ import { DashboardData, EMPTY_DASHBOARD } from '../../modelos/dashboard.models';
           </section>
 
           <section class="surface pending-card">
-            <header class="card-heading"><h2>Seguimientos pendientes</h2></header>
+            <header class="card-heading"><h2>Pendientes de revisar</h2></header>
             <div class="pending-list">
               <a routerLink="/seguimientos">
                 <span class="pending-icon amber"><app-icon name="bell" /></span>
@@ -224,7 +226,7 @@ import { DashboardData, EMPTY_DASHBOARD } from '../../modelos/dashboard.models';
               </a>
             </div>
             <a class="card-link align-right" routerLink="/seguimientos"
-              >Ir a seguimiento <app-icon name="arrow"
+              >Ver seguimientos <app-icon name="arrow"
             /></a>
           </section>
 
@@ -246,7 +248,9 @@ import { DashboardData, EMPTY_DASHBOARD } from '../../modelos/dashboard.models';
                   @for (patient of data().recentPatients; track patient.id) {
                     <tr>
                       <td>
-                        <strong>{{ patient.fullName }}</strong>
+                        <a class="patient-link" [routerLink]="['/pacientes', patient.id]">
+                          <strong>{{ patient.fullName }}</strong>
+                        </a>
                       </td>
                       <td>{{ patient.ageYears }}</td>
                       <td class="objective-cell">{{ patient.goal || 'Por definir' }}</td>
@@ -372,7 +376,7 @@ import { DashboardData, EMPTY_DASHBOARD } from '../../modelos/dashboard.models';
       .agenda-list article div small {
         margin-top: 0.18rem;
         color: var(--text-muted);
-        font-size: 0.65rem;
+        font-size: 0.72rem;
       }
       .agenda-list article div strong {
         overflow: hidden;
@@ -396,7 +400,7 @@ import { DashboardData, EMPTY_DASHBOARD } from '../../modelos/dashboard.models';
         align-items: center;
         gap: 0.25rem;
         color: var(--primary-dark);
-        font-size: 0.7rem;
+        font-size: 0.72rem;
         font-weight: 750;
         text-decoration: none;
         border-top: 1px solid var(--border-soft);
@@ -429,7 +433,7 @@ import { DashboardData, EMPTY_DASHBOARD } from '../../modelos/dashboard.models';
         font-size: 0.8rem;
       }
       .compact-empty span {
-        font-size: 0.7rem;
+        font-size: 0.72rem;
       }
       .patient-current {
         min-height: 22rem;
@@ -450,7 +454,7 @@ import { DashboardData, EMPTY_DASHBOARD } from '../../modelos/dashboard.models';
       }
       .patient-current > small {
         color: var(--text-muted);
-        font-size: 0.67rem;
+        font-size: 0.72rem;
       }
       .leaf {
         position: absolute;
@@ -492,7 +496,7 @@ import { DashboardData, EMPTY_DASHBOARD } from '../../modelos/dashboard.models';
       }
       .clinical-metrics span {
         color: var(--text-muted);
-        font-size: 0.63rem;
+        font-size: 0.72rem;
       }
       .clinical-metrics strong {
         margin: 0.3rem 0;
@@ -504,30 +508,33 @@ import { DashboardData, EMPTY_DASHBOARD } from '../../modelos/dashboard.models';
       }
       .clinical-metrics small {
         color: var(--primary);
-        font-size: 0.6rem;
+        font-size: 0.72rem;
       }
       .therapeutic-goal {
         padding: 0.55rem 0 0.75rem;
         border-top: 1px solid #eeeae2;
       }
       .therapeutic-goal span {
-        font-size: 0.66rem;
+        font-size: 0.72rem;
         font-weight: 750;
       }
       .therapeutic-goal p {
         margin: 0.22rem 0 0;
         color: var(--text-muted);
-        font-size: 0.66rem;
+        font-size: 0.72rem;
         line-height: 1.35;
       }
       .plan-progress > span {
         display: flex;
         justify-content: space-between;
         margin-bottom: 0.38rem;
-        font-size: 0.65rem;
+        font-size: 0.72rem;
       }
       .plan-progress b {
         font-weight: 750;
+      }
+      .patient-link {
+        color: inherit;
       }
       .patient-action {
         min-height: 2.15rem;
@@ -539,7 +546,7 @@ import { DashboardData, EMPTY_DASHBOARD } from '../../modelos/dashboard.models';
         border: 1px solid var(--primary);
         border-radius: 0.45rem;
         color: var(--text);
-        font-size: 0.7rem;
+        font-size: 0.72rem;
         font-weight: 750;
         text-decoration: none;
       }
@@ -567,12 +574,12 @@ import { DashboardData, EMPTY_DASHBOARD } from '../../modelos/dashboard.models';
         display: block;
       }
       .pending-list a > span strong {
-        font-size: 0.68rem;
+        font-size: 0.72rem;
       }
       .pending-list a > span small {
         margin-top: 0.2rem;
         color: var(--text-muted);
-        font-size: 0.58rem;
+        font-size: 0.72rem;
       }
       .pending-list a > b {
         color: var(--primary);
@@ -601,12 +608,12 @@ import { DashboardData, EMPTY_DASHBOARD } from '../../modelos/dashboard.models';
       }
       .recent-patients .data-table {
         min-width: 45rem;
-        font-size: 0.68rem;
+        font-size: 0.72rem;
       }
       .recent-patients .data-table th {
         height: 2.15rem;
         padding: 0.45rem 0.6rem;
-        font-size: 0.58rem;
+        font-size: 0.72rem;
         text-transform: none;
         letter-spacing: 0;
         background: white;
@@ -616,7 +623,7 @@ import { DashboardData, EMPTY_DASHBOARD } from '../../modelos/dashboard.models';
         padding: 0.55rem 0.6rem;
       }
       .recent-patients .badge {
-        font-size: 0.57rem;
+        font-size: 0.72rem;
         padding: 0.22rem 0.38rem;
       }
       .empty-row {
@@ -708,8 +715,14 @@ export class DashboardComponent implements OnInit {
     return this.data().totalPatients ? Math.round((value / this.data().totalPatients) * 100) : 0;
   }
 
-  endTime(startsAtUtc: string): string {
-    const end = new Date(new Date(startsAtUtc).getTime() + 45 * 60_000);
+  dayLabel(startsAtUtc: string): string {
+    const day = new Date(startsAtUtc);
+    if (day.toDateString() === new Date().toDateString()) return 'Hoy · ';
+    return `${day.toLocaleDateString('es-EC', { weekday: 'short', day: 'numeric', month: 'short' })} · `;
+  }
+
+  endTime(startsAtUtc: string, durationMinutes: number): string {
+    const end = new Date(new Date(startsAtUtc).getTime() + durationMinutes * 60_000);
     return end.toLocaleTimeString('es-EC', { hour: '2-digit', minute: '2-digit', hour12: false });
   }
 

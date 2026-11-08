@@ -50,6 +50,16 @@
           <h3>{{ template.name }}</h3>
           <strong>{{ template.objective }}</strong>
           <p>{{ template.summary }}</p>
+          @if (contentOf(template).length) {
+            <details class="template-content">
+              <summary>Ver todo lo que incluye ({{ contentOf(template).length }})</summary>
+              <dl>
+                @for (item of contentOf(template); track item.label) {
+                  <div><dt>{{ item.label }}</dt><dd>{{ item.value }}</dd></div>
+                }
+              </dl>
+            </details>
+          }
           <button class="button button-primary" type="button" (click)="use(template)">
             Usar como base
           </button>
@@ -154,6 +164,18 @@
               @if (inputValue.invalid && inputValue.touched) {
                 <small class="form-error" role="alert">Completa este campo antes de guardar.</small>
               }
+            } @else if (field.kind === 'select') {
+              <select
+                [id]="'template-' + field.key"
+                [name]="'template-' + field.key"
+                [(ngModel)]="model.values[field.key]"
+                [attr.aria-describedby]="'help-' + field.key"
+              >
+                <option value="">Sin indicar</option>
+                @for (option of field.options; track option.value) {
+                  <option [value]="option.value">{{ option.label }}</option>
+                }
+              </select>
             } @else {
               <textarea
                 #textareaValue="ngModel"

@@ -30,6 +30,9 @@ public interface IEnergyCalculator
 
 public sealed class EnergyCalculator : IEnergyCalculator
 {
+    /// <summary>Mismo mínimo que admite la meta de un plan de menú.</summary>
+    public const decimal MinimumTotalKcal = 500m;
+
     public EnergyCalculationResult Calculate(EnergyCalculationRequest request)
     {
         Validate(request);

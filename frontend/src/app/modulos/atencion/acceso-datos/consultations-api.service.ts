@@ -16,6 +16,12 @@ export class ConsultationsApiService {
       .pipe(catchError((error) => this.fail(error)));
   }
 
+  listByPatient(patientId: string): Observable<ConsultationListItem[]> {
+    return this.http
+      .get<ConsultationListItem[]>(`${this.baseUrl}/consultations/by-patient/${patientId}`)
+      .pipe(catchError((error) => this.fail(error)));
+  }
+
   create(request: CreateConsultationRequest): Observable<ConsultationListItem> {
     return this.http
       .post<ConsultationListItem>(`${this.baseUrl}/consultations`, request)

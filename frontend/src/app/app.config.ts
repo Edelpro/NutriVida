@@ -10,6 +10,11 @@ export const appConfig: ApplicationConfig = {
     provideBrowserGlobalErrorListeners(),
     provideRouter(routes, withInMemoryScrolling({ scrollPositionRestoration: 'top' })),
     provideHttpClient(withInterceptors([authInterceptor])),
-    { provide: API_BASE_URL, useValue: 'http://localhost:5158/api' },
+    {
+      provide: API_BASE_URL,
+      useFactory: () =>
+        (window as { NUTRIVIDA_CONFIG?: { apiBaseUrl?: string } }).NUTRIVIDA_CONFIG?.apiBaseUrl ??
+        'http://localhost:5158/api',
+    },
   ],
 };

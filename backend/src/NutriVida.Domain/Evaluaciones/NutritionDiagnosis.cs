@@ -15,4 +15,5 @@ public sealed class NutritionDiagnosis : BaseEntity
     public DiagnosisStatus Status { get; set; } = DiagnosisStatus.Draft;
     public string ProfessionalName { get; set; } = string.Empty;
     public DateTime? ApprovedAtUtc { get; set; }
+    public string ApprovedByName { get; set; } = string.Empty;
 }

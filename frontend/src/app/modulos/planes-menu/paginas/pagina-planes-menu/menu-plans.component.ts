@@ -1,8 +1,11 @@
 import { DatePipe, DecimalPipe, LowerCasePipe } from '@angular/common';
-import { Component, OnInit, effect, inject, signal } from '@angular/core';
+import { Component, OnInit, ViewChild, computed, effect, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, RouterLink } from '@angular/router';
 import { ApiService, Food, MenuPlanSummary } from '../../../../nucleo/api.service';
+import { toLocalIsoDate } from '../../../../nucleo/fechas';
+import { FOOD_OPTION_LIMIT, filterFoods, restrictionMatches, scaleFood, withSelectedFood } from '../../../../nucleo/food-options';
+import { QuickTemplatesApiService } from '../../../plantillas/acceso-datos/quick-templates-api.service';
 import { AuthService } from '../../../../nucleo/autenticacion/auth.service';
 import { PatientContextService } from '../../../../nucleo/contexto-paciente/patient-context.service';
 import { IconComponent } from '../../../../compartido/icono/icon.component';
@@ -47,7 +50,6 @@ interface PlanItem {
           energético.
         </p>
       </div>
-      <span class="badge badge-warning">Datos demo señalados</span>
     </header>
     <app-flujo-plan-nutricional [currentStep]="3" />
     <app-patient-context-bar />
@@ -55,10 +57,22 @@ interface PlanItem {
       <summary>Usar una plantilla rápida <small>Opcional</small></summary>
       <app-quick-templates scope="menuPlan" (templateSelected)="applyTemplate($event)" />
     </details>
+    @if (restrictions()) {
+      <div class="notice notice-warning restrictions" role="status">
+        <app-icon name="info" /><span>{{ restrictions() }}</span>
+      </div>
+    } @else if (restrictionsUnknown()) {
+      <div class="notice notice-warning restrictions">
+        <app-icon name="info" /><span
+          ><strong>Alergias e intolerancias sin registrar.</strong> Complétalas en la evaluación antes
+          de armar el menú.</span
+        >
+      </div>
+    }
     <section class="surface meal-choice" aria-labelledby="mealChoiceTitle">
       <header class="surface-header">
         <div>
-          <p class="eyebrow">1 · Ubica la comida</p>
+          <p class="eyebrow">Primero: ubica la comida</p>
           <h2 id="mealChoiceTitle">Elige primero el día y el tiempo de comida</h2>
         </div>
         <span class="badge">{{ dayLabel() }} · {{ draft.mealName }}</span>
@@ -118,7 +132,7 @@ interface PlanItem {
       <section class="surface catalog">
         <header class="surface-header">
           <div>
-            <p class="eyebrow">2 · Elige qué vas a añadir</p>
+            <p class="eyebrow">Después: elige qué añadir</p>
             <h2>{{ dayLabel() }} · {{ draft.mealName }}</h2>
           </div>
           <app-icon name="food" />
@@ -176,13 +190,26 @@ interface PlanItem {
             </header>
             <div class="single-food-grid">
               <div class="field">
+                <label for="foodFilter">Buscar en el catálogo</label
+                ><input
+                  id="foodFilter"
+                  autocomplete="off"
+                  placeholder="Ej. lenteja, cereal…"
+                  [ngModel]="foodFilter()"
+                  (ngModelChange)="foodFilter.set($event)"
+                />
                 <label for="food">Selecciona un alimento</label
                 ><select id="food" [(ngModel)]="draft.foodId">
                   <option value="">Selecciona un alimento</option>
-                  @for (food of foods(); track food.id) {
+                  @for (food of foodOptions(); track food.id) {
                     <option [value]="food.id">{{ food.name }} · {{ food.householdMeasure }}</option>
                   }</select
-                ><small>Catálogo autorizado o alimentos personalizados creados por el equipo.</small>
+                ><small>
+                  {{ foods().length }} alimentos en el catálogo.
+                  @if (visibleFoods().length === foodOptionLimit) {
+                    Se muestran {{ foodOptionLimit }}: escribe para acotar.
+                  }
+                </small>
               </div>
               <div class="field portions-field">
                 <label for="portions">Porciones</label
@@ -194,7 +221,11 @@ interface PlanItem {
                   step=".25"
                   [(ngModel)]="draft.portions"
                 />
-                <small>Incrementos de ¼.</small>
+                @if (draftPreview(); as preview) {
+                  <small>= {{ preview.grams | number: '1.0-1' }} g · {{ preview.energyKcal | number: '1.0-0' }} kcal</small>
+                } @else {
+                  <small>Incrementos de ¼.</small>
+                }
               </div>
               <button
                 class="button button-primary"
@@ -214,15 +245,17 @@ interface PlanItem {
             </div>
           </section>
         </div>
-        <div class="notice notice-warning">
+        @if (hasDemoFoods()) {
+      <div class="notice notice-warning">
           <app-icon name="info" /><span
             >Los alimentos “EcuadorDemo” son ficticios y sirven solo para validar el programa.
             Importa tablas autorizadas antes del uso clínico.</span
           >
         </div>
+    }
       </section>
       <section class="daily-total">
-        <p class="eyebrow">Balance del día</p>
+        <p class="eyebrow">Balance del {{ dayLabel() | lowercase }}</p>
         <strong
           >{{ totalKcal() | number: '1.0-0' }} <em>/ {{ targetKcal }} kcal</em></strong
         >
@@ -236,7 +269,13 @@ interface PlanItem {
             >Grasa<b>{{ fatTotal() | number: '1.0-0' }} g</b></span
           >
         </div>
-        <p class="remaining">{{ remainingKcal() | number: '1.0-0' }} kcal por distribuir</p>
+        @if (overTargetKcal() > 0) {
+          <p class="remaining" role="status">
+            <strong>{{ overTargetKcal() | number: '1.0-0' }} kcal sobre la meta del día</strong>
+          </p>
+        } @else {
+          <p class="remaining">{{ remainingKcal() | number: '1.0-0' }} kcal por distribuir</p>
+        }
         <div class="field">
           <label for="target">Meta energética</label
           ><input
@@ -246,18 +285,31 @@ interface PlanItem {
             max="6000"
             step="50"
             [(ngModel)]="targetKcal"
-          /><small>Basada en cálculo revisado.</small>
+          /><small>{{ targetSource() }}</small>
         </div>
       </section>
     </div>
     <section class="surface plan">
       <header class="surface-header">
         <div>
-          <p class="eyebrow">3 · Revisa y guarda</p>
+          <p class="eyebrow">Por último: revisa y guarda</p>
           <h2>Menú en construcción</h2>
         </div>
         <span class="caption">{{ items().length }} alimentos</span>
       </header>
+      <div class="week-strip" role="group" aria-label="Energía por día del menú">
+        @for (day of weekSummary(); track day.number) {
+          <button
+            type="button"
+            [class.is-selected]="day.number === draft.dayOfWeek"
+            [attr.aria-pressed]="day.number === draft.dayOfWeek"
+            (click)="draft.dayOfWeek = day.number"
+          >
+            <strong>{{ day.label }}</strong>
+            <small>{{ day.kcal ? (day.kcal | number: '1.0-0') + ' kcal' : 'Sin comidas' }}</small>
+          </button>
+        }
+      </div>
       @if (!items().length) {
         <div class="empty-state">
           <div>
@@ -271,7 +323,7 @@ interface PlanItem {
           <table class="data-table">
             <thead>
               <tr>
-                <th>Comida</th>
+                <th>Día y comida</th>
                 <th>Alimento</th>
                 <th>Porción</th>
                 <th>Gramos</th>
@@ -283,10 +335,15 @@ interface PlanItem {
               @for (item of items(); track $index) {
                 <tr>
                   <td>
-                    <span class="badge">{{ item.mealName }}</span>
+                    <span class="badge">{{ shortDay(item.dayOfWeek) }} · {{ item.mealName }}</span>
                   </td>
                   <td>
                     <strong>{{ item.foodNameSnapshot }}</strong>
+                    @if (conflicts(item.foodNameSnapshot).length) {
+                      <small class="conflict" role="alert">
+                        Revisar: {{ conflicts(item.foodNameSnapshot).join(', ') }}
+                      </small>
+                    }
                   </td>
                   <td>{{ item.portions }} × {{ item.householdMeasure }}</td>
                   <td>{{ item.grams | number: '1.0-0' }} g</td>
@@ -315,6 +372,15 @@ interface PlanItem {
               >Visible para el equipo clínico.</small
             >
           </div>
+          <div class="field">
+            <label for="planStartsOn">Inicio del plan</label
+            ><input id="planStartsOn" type="date" [(ngModel)]="planStartsOn" />
+          </div>
+          <div class="field">
+            <label for="planEndsOn">Fin del plan</label
+            ><input id="planEndsOn" type="date" [min]="planStartsOn" [(ngModel)]="planEndsOn" />
+            <small>Solo se guardan comidas de días dentro de estas fechas.</small>
+          </div>
           <div class="field plan-notes">
             <label for="planNotes">Notas profesionales</label>
             <textarea
@@ -326,6 +392,14 @@ interface PlanItem {
             <small>Personaliza la plantilla según la evaluación del paciente.</small>
           </div>
         </div>
+        <button
+          class="button button-secondary"
+          type="button"
+          [disabled]="!items().length || savingTemplate()"
+          (click)="saveAsTemplate()"
+        >
+          Guardar como plantilla
+        </button>
         <button
           class="button button-primary"
           type="button"
@@ -342,7 +416,7 @@ interface PlanItem {
           <p class="eyebrow">Historial del paciente</p>
           <h2 id="savedPlansTitle">Planes guardados</h2>
         </div>
-        <span class="caption">{{ savedPlans().length }} registrados</span>
+        <span class="caption">{{ savedPlans().length }} {{ savedPlans().length === 1 ? 'registrado' : 'registrados' }}</span>
       </header>
       @if (loadingPlans()) {
         <div class="status-message"><span class="spinner" aria-hidden="true"></span></div>
@@ -380,9 +454,23 @@ interface PlanItem {
                   <td class="metric-number">{{ plan.energyTargetKcal | number: '1.0-0' }} kcal</td>
                   <td>{{ plan.items.length }}</td>
                   <td>
-                    <span class="badge">{{ plan.status === 0 ? 'Borrador' : 'Vigente' }}</span>
+                    @if (plan.status === 2) {
+                      <span class="badge" [title]="'Aprobado por ' + plan.approvedByName">Aprobado</span>
+                    } @else {
+                      <span class="badge badge-warning">Borrador</span>
+                    }
                   </td>
                   <td><div class="toolbar">
+                    @if (plan.status !== 2) {
+                      <button
+                        class="button button-primary button-small"
+                        type="button"
+                        [disabled]="approvingPlanId() === plan.id"
+                        (click)="approvePlan(plan)"
+                      >
+                        Aprobar
+                      </button>
+                    }
                     <button class="button button-secondary button-small" type="button" (click)="editPlan(plan)">Editar</button>
                     @if (auth.hasRole('ClinicAdmin')) {
                       @if (pendingArchivePlanId() === plan.id) {
@@ -450,7 +538,7 @@ interface PlanItem {
       .meal-visuals small {
         margin-top: 0.25rem;
         color: var(--text-muted);
-        font-size: 0.65rem;
+        font-size: 0.72rem;
       }
       .builder-layout {
         display: grid;
@@ -486,7 +574,7 @@ interface PlanItem {
       .source-option > header small {
         margin-top: 0.12rem;
         color: var(--text-muted);
-        font-size: 0.7rem;
+        font-size: 0.72rem;
       }
       .option-number {
         width: 1.8rem;
@@ -529,7 +617,7 @@ interface PlanItem {
         align-items: center;
         gap: 0.7rem;
         color: var(--text-muted);
-        font-size: 0.7rem;
+        font-size: 0.72rem;
         font-weight: 700;
         text-transform: uppercase;
       }
@@ -542,6 +630,41 @@ interface PlanItem {
       }
       .catalog > .notice {
         margin: 0 1.15rem 1.15rem;
+      }
+      .restrictions {
+        margin-bottom: 1rem;
+      }
+      .conflict {
+        display: block;
+        color: var(--danger);
+        font-weight: 700;
+      }
+      .week-strip {
+        padding: 0.8rem 1rem;
+        display: grid;
+        grid-template-columns: repeat(7, minmax(4.6rem, 1fr));
+        gap: 0.4rem;
+        overflow-x: auto;
+        border-bottom: 1px solid var(--border);
+      }
+      .week-strip button {
+        padding: 0.45rem 0.3rem;
+        display: grid;
+        gap: 0.1rem;
+        text-align: center;
+        color: var(--text);
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: var(--radius-sm, 0.375rem);
+        cursor: pointer;
+      }
+      .week-strip button.is-selected {
+        border-color: var(--primary);
+        background: var(--surface-muted, #f5f8ef);
+      }
+      .week-strip small {
+        color: var(--text-muted);
+        font-size: 0.72rem;
       }
       .daily-total {
         padding: 1.35rem;
@@ -580,7 +703,7 @@ interface PlanItem {
         border: 1px solid rgba(255, 255, 255, 0.16);
         border-radius: 0.45rem;
         color: #dcebc6;
-        font-size: 0.62rem;
+        font-size: 0.72rem;
       }
       .macro b {
         display: block;
@@ -628,9 +751,21 @@ interface PlanItem {
       }
       .plan-details {
         margin-right: auto;
-        width: min(36rem, 100%);
+        width: min(44rem, 100%);
         display: grid;
+        grid-template-columns: 1fr 1fr;
         gap: 0.75rem;
+      }
+      .plan-details .plan-name,
+      .plan-details .plan-notes {
+        grid-column: 1 / -1;
+      }
+      @media (min-width: 901px) {
+        .daily-total {
+          position: sticky;
+          top: 1rem;
+          align-self: start;
+        }
       }
       .saved-plans {
         margin-top: 1rem;
@@ -674,6 +809,17 @@ export class MenuPlansComponent implements OnInit {
   private readonly dishesApi = inject(DishesApiService);
   private readonly route = inject(ActivatedRoute);
   readonly foods = signal<Food[]>([]);
+  /** El aviso de datos ficticios solo aplica mientras el catálogo tenga alimentos de demostración. */
+  hasDemoFoods(): boolean {
+    return this.foods().some((food) => food.source === 0);
+  }
+  readonly foodFilter = signal('');
+  readonly visibleFoods = computed(() => filterFoods(this.foods(), this.foodFilter()));
+  readonly foodOptionLimit = FOOD_OPTION_LIMIT;
+  readonly restrictions = signal('');
+  readonly restrictionsUnknown = signal(false);
+  readonly approvingPlanId = signal<string | null>(null);
+  readonly targetSource = signal('Selecciona un paciente para usar su último cálculo.');
   readonly dishes = signal<Dish[]>([]);
   readonly items = signal<PlanItem[]>([]);
   readonly saving = signal(false);
@@ -683,10 +829,10 @@ export class MenuPlansComponent implements OnInit {
   readonly editingPlanId = signal<string | null>(null);
   private loadedPatientId = '';
   targetKcal = 1950;
-  planName = 'Plan semanal · septiembre';
+  planName = `Plan semanal · ${new Date().toLocaleDateString('es-EC', { month: 'long' })}`;
   professionalNotes = 'Plan sujeto a revisión profesional.';
-  private planStartsOn = '';
-  private planEndsOn = '';
+  planStartsOn = toLocalIsoDate();
+  planEndsOn = this.defaultPlanEnd();
   draft = { foodId: '', mealName: 'Desayuno', portions: 1, dayOfWeek: 1 };
   selectedDishId = '';
   dayLabel(): string {
@@ -698,16 +844,77 @@ export class MenuPlansComponent implements OnInit {
     effect(() => {
       const patientId = this.patientContext.selectedId();
       if (!patientId || patientId === this.loadedPatientId) return;
+      // Un menú a medio armar pertenece al paciente anterior: no debe guardarse en este.
+      this.items.set([]);
+      this.editingPlanId.set(null);
+      this.resetPlanDates();
       this.loadSavedPlans(patientId);
+      this.loadEnergyTarget(patientId);
+      this.loadRestrictions(patientId);
     });
   }
+  @ViewChild(QuickTemplatesComponent) private templatesCard?: QuickTemplatesComponent;
+  private readonly templatesApi = inject(QuickTemplatesApiService);
+  readonly savingTemplate = signal(false);
   applyTemplate(template: QuickTemplate): void {
-    this.planName = template.values['planName'] ?? this.planName;
-    this.professionalNotes = template.values['professionalNotes'] ?? this.professionalNotes;
+    this.planName = template.values['planName'] || this.planName;
+    this.professionalNotes = template.values['professionalNotes'] || this.professionalNotes;
+    const target = Number(template.values['energyTargetKcal']);
+    if (target >= 500 && target <= 6000) {
+      this.targetKcal = target;
+      this.targetSource.set('Tomada de la plantilla: confírmala con el cálculo del paciente.');
+    }
+    if (template.values['itemsJson'] && !this.items().length) {
+      try {
+        const rows = JSON.parse(template.values['itemsJson']);
+        if (Array.isArray(rows)) this.items.set(rows);
+      } catch {
+        this.toast.show('error', 'No se cargaron los alimentos de la plantilla');
+      }
+    }
+  }
+  saveAsTemplate(): void {
+    const itemsJson = JSON.stringify(this.items());
+    if (itemsJson.length > 30000) {
+      this.toast.show('error', 'El menú es muy grande', 'Reduce alimentos para guardarlo como plantilla.');
+      return;
+    }
+    this.savingTemplate.set(true);
+    const count = this.items().length;
+    this.templatesApi
+      .create({
+        scope: 'menuPlan',
+        name: this.planName.trim() || 'Plantilla de menú',
+        category: 'Menú',
+        objective: 'Menú reutilizable',
+        summary: `Menú guardado con ${count} alimentos y meta de ${this.targetKcal} kcal.`,
+        values: {
+          planName: this.planName.trim(),
+          professionalNotes: this.professionalNotes.trim(),
+          energyTargetKcal: String(this.targetKcal),
+          itemsJson,
+        },
+      })
+      .subscribe({
+        next: () => {
+          this.savingTemplate.set(false);
+          this.templatesCard?.load();
+          this.toast.show('success', 'Plantilla guardada', 'Ya puedes usarla con otros pacientes.');
+        },
+        error: (error: Error) => {
+          this.savingTemplate.set(false);
+          this.toast.show('error', 'No se guardó la plantilla', error.message);
+        },
+      });
+  }
+  draftPreview() {
+    const food = this.selectedFood();
+    const portions = Number(this.draft.portions);
+    return food && portions > 0 ? scaleFood(food, portions) : null;
   }
   ngOnInit(): void {
-    this.api.foods().subscribe({
-      next: (r) => this.foods.set(r.items),
+    this.api.foodOptions().subscribe({
+      next: (foods) => this.foods.set(foods),
       error: (error: Error) => this.toast.show('error', 'No se cargó el catálogo', error.message),
     });
     this.dishesApi.listAll().subscribe({
@@ -747,6 +954,33 @@ export class MenuPlansComponent implements OnInit {
     this.selectedDishId = '';
     this.toast.show('success', 'Plato añadido', `Se agregó una porción de ${dish.name}.`);
   }
+  foodOptions(): Food[] {
+    return withSelectedFood(this.visibleFoods(), this.foods(), this.draft.foodId);
+  }
+  private defaultPlanEnd(): string {
+    const end = new Date();
+    end.setDate(end.getDate() + 6);
+    return toLocalIsoDate(end);
+  }
+  private resetPlanDates(): void {
+    this.planStartsOn = toLocalIsoDate();
+    this.planEndsOn = this.defaultPlanEnd();
+  }
+  shortDay(day: number): string {
+    return ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'][day - 1] ?? '';
+  }
+  weekSummary(): { number: number; label: string; kcal: number }[] {
+    return [1, 2, 3, 4, 5, 6, 7].map((number) => ({
+      number,
+      label: this.shortDay(number),
+      kcal: this.items()
+        .filter((item) => item.dayOfWeek === number)
+        .reduce((sum, item) => sum + item.energyKcal, 0),
+    }));
+  }
+  private dayItems(): PlanItem[] {
+    return this.items().filter((item) => item.dayOfWeek === this.draft.dayOfWeek);
+  }
   selectedFood(): Food | undefined {
     return this.foods().find((x) => x.id === this.draft.foodId);
   }
@@ -771,23 +1005,28 @@ export class MenuPlansComponent implements OnInit {
       },
     ]);
     this.draft.foodId = '';
-    this.toast.show('success', 'Alimento añadido', `${portions} porción(es) de ${food.name}`);
+    const conflict = this.conflicts(food.name);
+    if (conflict.length) {
+      this.toast.show('error', 'Revisa este alimento', `Coincide con lo registrado: ${conflict.join(', ')}.`);
+    } else {
+      this.toast.show('success', 'Alimento añadido', `${portions} porción(es) de ${food.name}`);
+    }
   }
   removeItem(index: number): void {
     this.items.update((rows) => rows.filter((_, i) => i !== index));
   }
   totalKcal(): number {
-    return this.items().reduce((sum, x) => sum + x.energyKcal, 0);
+    return this.dayItems().reduce((sum, x) => sum + x.energyKcal, 0);
   }
   proteinTotal(): number {
-    return this.items().reduce(
+    return this.dayItems().reduce(
       (sum, item) =>
         sum + (this.foods().find((x) => x.id === item.foodItemId)?.proteinG || 0) * item.portions,
       0,
     );
   }
   carbTotal(): number {
-    return this.items().reduce(
+    return this.dayItems().reduce(
       (sum, item) =>
         sum +
         (this.foods().find((x) => x.id === item.foodItemId)?.carbohydrateG || 0) * item.portions,
@@ -795,7 +1034,7 @@ export class MenuPlansComponent implements OnInit {
     );
   }
   fatTotal(): number {
-    return this.items().reduce(
+    return this.dayItems().reduce(
       (sum, item) =>
         sum + (this.foods().find((x) => x.id === item.foodItemId)?.fatG || 0) * item.portions,
       0,
@@ -803,6 +1042,9 @@ export class MenuPlansComponent implements OnInit {
   }
   progressPercent(): number {
     return Math.min(100, (this.totalKcal() / this.targetKcal) * 100);
+  }
+  overTargetKcal(): number {
+    return Math.max(0, this.totalKcal() - this.targetKcal);
   }
   remainingKcal(): number {
     return Math.max(0, this.targetKcal - this.totalKcal());
@@ -814,14 +1056,14 @@ export class MenuPlansComponent implements OnInit {
       return;
     }
     this.saving.set(true);
-    const today = this.planStartsOn || new Date().toISOString().slice(0, 10);
+    const today = this.planStartsOn || toLocalIsoDate();
     const end = this.planEndsOn ? new Date(`${this.planEndsOn}T12:00:00`) : new Date();
     if (!this.planEndsOn) end.setDate(end.getDate() + 6);
     const body = {
         patientId,
         name: this.planName,
         startsOn: today,
-        endsOn: end.toISOString().slice(0, 10),
+        endsOn: toLocalIsoDate(end),
         energyTargetKcal: this.targetKcal,
         professionalNotes: this.professionalNotes.trim(),
         items: this.items(),
@@ -832,8 +1074,7 @@ export class MenuPlansComponent implements OnInit {
         next: () => {
           this.saving.set(false);
           this.editingPlanId.set(null);
-          this.planStartsOn = '';
-          this.planEndsOn = '';
+          this.resetPlanDates();
           this.toast.show('success', editingId ? 'Plan actualizado' : 'Plan guardado', 'Ya puede revisarse antes de enviarlo.');
           this.loadSavedPlans(patientId, true);
         },
@@ -890,6 +1131,66 @@ export class MenuPlansComponent implements OnInit {
         this.archivingPlanId.set(null);
         this.toast.show('error', 'No se archivó el plan', e.message);
       },
+    });
+  }
+
+  private restrictionTerms = '';
+  conflicts(foodName: string): string[] {
+    return restrictionMatches(foodName, this.restrictionTerms);
+  }
+  private loadRestrictions(patientId: string): void {
+    this.restrictionTerms = '';
+    this.restrictions.set('');
+    this.restrictionsUnknown.set(false);
+    this.api.assessments(patientId).subscribe({
+      next: (assessments) => {
+        if (this.patientContext.selectedId() !== patientId) return;
+        const latest = assessments[0];
+        if (!latest) {
+          this.restrictionsUnknown.set(true);
+          return;
+        }
+        this.restrictionTerms = [latest.allergies, latest.intolerances].filter(Boolean).join(', ');
+        this.restrictions.set(
+          [
+            latest.allergies ? `Alergias: ${latest.allergies}.` : '',
+            latest.intolerances ? `Intolerancias: ${latest.intolerances}.` : '',
+          ]
+            .filter(Boolean)
+            .join(' '),
+        );
+      },
+      error: () => this.restrictionsUnknown.set(true),
+    });
+  }
+  approvePlan(plan: MenuPlanSummary): void {
+    if (this.approvingPlanId()) return;
+    this.approvingPlanId.set(plan.id);
+    this.api.approveMenuPlan(plan.id).subscribe({
+      next: () => {
+        this.approvingPlanId.set(null);
+        this.loadSavedPlans(plan.patientId, true);
+        this.toast.show('success', 'Plan aprobado', 'Ya puede compartirse con el paciente.');
+      },
+      error: (e) => {
+        this.approvingPlanId.set(null);
+        this.toast.show('error', 'No se aprobó el plan', e.message);
+      },
+    });
+  }
+  private loadEnergyTarget(patientId: string): void {
+    this.api.energyCalculations(patientId).subscribe({
+      next: (calculations) => {
+        if (this.patientContext.selectedId() !== patientId || this.editingPlanId()) return;
+        const latest = calculations[0];
+        if (!latest) {
+          this.targetSource.set('Este paciente no tiene un cálculo guardado: define la meta a mano.');
+          return;
+        }
+        this.targetKcal = Math.min(6000, Math.max(500, Math.round(latest.totalEnergyKcal)));
+        this.targetSource.set('Tomada del último cálculo energético del paciente.');
+      },
+      error: () => this.targetSource.set('No se pudo leer el último cálculo: define la meta a mano.'),
     });
   }
 

@@ -13,4 +13,6 @@ public sealed class ApplicationUser : BaseEntity
     public bool IsActive { get; set; } = true;
     public bool MustChangePassword { get; set; }
     public DateTime? LastLoginAtUtc { get; set; }
+    public int FailedLoginAttempts { get; set; }
+    public DateTime? LockedUntilUtc { get; set; }
 }

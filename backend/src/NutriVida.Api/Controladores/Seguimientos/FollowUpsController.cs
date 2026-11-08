@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using NutriVida.Domain.FollowUps;
 using NutriVida.Api.Security;
+using NutriVida.Api.Services.Time;
 using NutriVida.Infrastructure.Persistence;
 
 namespace NutriVida.Api.Controladores.Seguimientos;
@@ -74,7 +75,7 @@ public sealed class FollowUpsController(NutriVidaDbContext db) : ControllerBase
 
     private static string? Validate(FollowUpRequest request)
     {
-        var today = DateOnly.FromDateTime(DateTime.Today);
+        var today = ClinicClock.Today();
         if (request.FollowUpDate == default || request.FollowUpDate > today)
             return "La fecha del seguimiento debe ser válida y no puede estar en el futuro.";
         if (request.PeriodStartsOn.HasValue != request.PeriodEndsOn.HasValue)

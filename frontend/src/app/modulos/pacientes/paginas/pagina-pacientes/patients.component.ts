@@ -12,12 +12,13 @@ import {
 } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormsModule, NgForm } from '@angular/forms';
-import { ActivatedRoute, Router } from '@angular/router';
+import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { PatientContextService } from '../../../../nucleo/contexto-paciente/patient-context.service';
 import { AuthService } from '../../../../nucleo/autenticacion/auth.service';
 import { IconComponent } from '../../../../compartido/icono/icon.component';
 import { ToastService } from '../../../../compartido/notificaciones/toast.service';
 import { PatientsApiService } from '../../acceso-datos/patients-api.service';
+import { toLocalIsoDate } from '../../../../nucleo/fechas';
 import { NutritionistOption, Patient } from '../../modelos/patient.models';
 
 type PatientForm = {
@@ -39,7 +40,7 @@ type PatientForm = {
 
 @Component({
   selector: 'app-patients',
-  imports: [FormsModule, DatePipe, IconComponent],
+  imports: [FormsModule, DatePipe, IconComponent, RouterLink],
   template: ` <div class="page">
       <header class="page-header">
         <div>
@@ -91,6 +92,11 @@ type PatientForm = {
                 Limpiar
               </button>
             }
+            @if (auth.hasRole('ClinicAdmin')) {
+              <button class="button button-quiet" type="button" (click)="toggleArchived()">
+                {{ showArchived() ? 'Ver activos' : 'Ver archivados' }}
+              </button>
+            }
           </div>
         </div>
         @if (loading()) {
@@ -129,7 +135,8 @@ type PatientForm = {
                       <span class="patient-cell"
                         ><span class="initials">{{ initials(patient) }}</span
                         ><span
-                          ><strong>{{ patient.firstName }} {{ patient.lastName }}</strong
+                          ><a class="patient-link" [routerLink]="['/pacientes', patient.id]"
+                            ><strong>{{ patient.firstName }} {{ patient.lastName }}</strong></a
                           ><small>{{
                             patient.dateOfBirth | date: 'dd MMM yyyy' : '' : 'es-EC'
                           }}</small></span
@@ -152,11 +159,24 @@ type PatientForm = {
                     }
                     <td><span class="badge">Activo</span></td>
                     <td>
+                      @if (showArchived()) {
+                        <button class="button button-secondary button-small" type="button" (click)="restore(patient)">
+                          Restaurar
+                        </button>
+                      } @else {
                       <span class="row-actions"
+                        ><a
+                          class="row-file"
+                          [routerLink]="['/pacientes', patient.id]"
+                          [attr.aria-label]="'Abrir ficha de ' + patient.firstName"
+                          title="Abrir ficha"
+                        >
+                          <app-icon name="eye" /></a
                         ><button
                           type="button"
                           (click)="openEdit(patient)"
                           aria-label="Editar {{ patient.firstName }}"
+                          title="Editar paciente"
                         >
                           <app-icon name="edit" /></button
                         >@if (auth.hasRole('ClinicAdmin')) {
@@ -165,11 +185,13 @@ type PatientForm = {
                             type="button"
                             (click)="confirmArchive(patient)"
                             aria-label="Archivar {{ patient.firstName }}"
+                            title="Archivar paciente"
                           >
                             <app-icon name="trash" />
                           </button>
                         }
-                      ></span>
+                      </span>
+                      }
                     </td>
                   </tr>
                 }
@@ -264,7 +286,6 @@ type PatientForm = {
                 required
                 minlength="3"
                 maxlength="30"
-                [disabled]="!!editingId()"
                 [attr.aria-invalid]="documentModel.invalid && (documentModel.touched || submitted())"
                 aria-describedby="documentHelp"
               />@if (documentModel.invalid && (documentModel.touched || submitted())) {
@@ -282,7 +303,6 @@ type PatientForm = {
                 min="1900-01-01"
                 [max]="today"
                 required
-                [disabled]="!!editingId()"
                 [attr.aria-invalid]="birthModel.invalid && (birthModel.touched || submitted())"
                 aria-describedby="birthHelp"
               />@if (birthModel.invalid && (birthModel.touched || submitted())) {
@@ -296,7 +316,6 @@ type PatientForm = {
                 name="sex"
                 [(ngModel)]="form.sexAtBirth"
                 required
-                [disabled]="!!editingId()"
               >
                 <option [ngValue]="1">Masculino</option>
                 <option [ngValue]="0">Femenino</option>
@@ -341,6 +360,7 @@ type PatientForm = {
                 name="email"
                 type="email"
                 [(ngModel)]="form.email"
+                (ngModelChange)="onContactChange()"
                 #emailModel="ngModel"
                 email
                 maxlength="180"
@@ -356,6 +376,7 @@ type PatientForm = {
                 id="phone"
                 name="phone"
                 [(ngModel)]="form.phone"
+                (ngModelChange)="onContactChange()"
                 #phoneModel="ngModel"
                 required
                 minlength="7"
@@ -381,17 +402,20 @@ type PatientForm = {
               ><textarea id="goal" name="goal" [(ngModel)]="form.goal" maxlength="600"></textarea
               ><small>Redáctalo como objetivo clínico revisable.</small>
             </div>
-            @if (!editingId()) {
-              <div class="col-12 consent">
-                <label class="check-line"
-                  ><input type="checkbox" name="emailConsent" [(ngModel)]="form.emailConsent" />
-                  Consentimiento para correo registrado</label
-                ><label class="check-line"
-                  ><input type="checkbox" name="waConsent" [(ngModel)]="form.whatsAppConsent" />
-                  Consentimiento para WhatsApp registrado</label
-                >
-              </div>
-            }
+            <fieldset id="consentimientos" class="col-12 consent">
+              <legend>Autorizaciones de contacto</legend>
+              <p>
+                Activa cada canal únicamente después de confirmar y registrar la autorización real
+                del paciente. Si cambias el correo o el teléfono, vuelve a confirmar su autorización.
+              </p>
+              <label class="check-line"
+                ><input type="checkbox" name="emailConsent" [(ngModel)]="form.emailConsent" />
+                El paciente autorizó comunicaciones por correo</label
+              ><label class="check-line"
+                ><input type="checkbox" name="waConsent" [(ngModel)]="form.whatsAppConsent" />
+                El paciente autorizó comunicaciones por WhatsApp</label
+              >
+            </fieldset>
           </div>
         </div>
         <footer class="dialog-footer">
@@ -490,9 +514,10 @@ type PatientForm = {
         display: block;
         margin-top: 0.18rem;
         color: var(--text-muted);
-        font-size: 0.7rem;
+        font-size: 0.72rem;
       }
       .initials {
+        flex: none;
         width: 2rem;
         height: 2rem;
         display: grid;
@@ -500,7 +525,7 @@ type PatientForm = {
         border-radius: 50%;
         background: var(--avocado-soft);
         color: var(--primary-dark);
-        font-size: 0.7rem;
+        font-size: 0.72rem;
         font-weight: 800;
       }
       .goal {
@@ -534,6 +559,20 @@ type PatientForm = {
         display: flex;
         gap: 0.25rem;
       }
+      .patient-link {
+        color: inherit;
+        text-decoration: none;
+      }
+      .patient-link:hover {
+        text-decoration: underline;
+      }
+      .row-file {
+        width: 2rem;
+        height: 2rem;
+        display: grid;
+        place-items: center;
+        color: var(--primary);
+      }
       .row-actions button {
         width: 2rem;
         height: 2rem;
@@ -560,10 +599,25 @@ type PatientForm = {
         border-radius: var(--radius-md);
         background: var(--surface-muted);
       }
+      .consent legend {
+        padding: 0 0.35rem;
+        font-size: 0.78rem;
+        font-weight: 800;
+      }
+      .consent p {
+        grid-column: 1 / -1;
+        margin: 0;
+        color: var(--text-muted);
+        font-size: 0.72rem;
+        line-height: 1.45;
+      }
       .confirm-dialog {
         width: min(31rem, calc(100% - 2rem));
       }
       @media (max-width: 700px) {
+        .patient-cell {
+          min-width: 12rem;
+        }
         .patient-toolbar {
           align-items: stretch;
           flex-direction: column;
@@ -609,7 +663,9 @@ export class PatientsComponent implements OnInit, AfterViewInit {
   readonly submitted = signal(false);
   readonly editingId = signal<string | null>(null);
   readonly archiveTarget = signal<Patient | null>(null);
-  readonly today = new Date().toISOString().slice(0, 10);
+  readonly showArchived = signal(false);
+  readonly today = toLocalIsoDate();
+  private savedContact = { email: '', phone: '' };
   query = '';
   form: PatientForm = this.emptyForm();
   ngOnInit(): void {
@@ -624,10 +680,24 @@ export class PatientsComponent implements OnInit, AfterViewInit {
     this.viewReady = true;
     this.openRequestedPatient();
   }
+  toggleArchived(): void {
+    this.showArchived.update((value) => !value);
+    this.load(1);
+  }
+  restore(patient: Patient): void {
+    this.api.restore(patient.id).subscribe({
+      next: () => {
+        this.toast.show('success', 'Paciente restaurado', 'Vuelve a estar entre los pacientes activos.');
+        this.patientContext.refresh();
+        this.load(1);
+      },
+      error: (error: Error) => this.toast.show('error', 'No se restauró el paciente', error.message),
+    });
+  }
   load(page: number): void {
     this.loading.set(true);
     this.loadError.set('');
-    this.api.list(this.query, page).subscribe({
+    this.api.list(this.query, page, this.showArchived()).subscribe({
       next: (result) => {
         this.patients.set(result.items);
         this.page.set(result.page);
@@ -658,6 +728,13 @@ export class PatientsComponent implements OnInit, AfterViewInit {
     this.submitted.set(false);
     this.editor.nativeElement.showModal();
   }
+  onContactChange(): void {
+    if (!this.editingId()) return;
+    if (this.form.email.trim().toLowerCase() !== this.savedContact.email.trim().toLowerCase())
+      this.form.emailConsent = false;
+    if (this.form.phone.replace(/\D/g, '') !== this.savedContact.phone.replace(/\D/g, ''))
+      this.form.whatsAppConsent = false;
+  }
   openEdit(patient: Patient): void {
     this.openEditById(patient.id);
   }
@@ -667,6 +744,7 @@ export class PatientsComponent implements OnInit, AfterViewInit {
     this.api.get(patientId).subscribe({
       next: (p) => {
         this.editingId.set(p.id);
+        this.savedContact = { email: p.email, phone: p.phone };
         Object.assign(this.form, {
           documentNumber: p.documentNumber,
           firstName: p.firstName,
@@ -692,6 +770,9 @@ export class PatientsComponent implements OnInit, AfterViewInit {
         });
         this.changeDetector.detectChanges();
         if (!this.editor.nativeElement.open) this.editor.nativeElement.showModal();
+        if (this.route.snapshot.queryParamMap.get('seccion') === 'consentimientos') {
+          setTimeout(() => document.getElementById('consentimientos')?.scrollIntoView({ block: 'center' }));
+        }
       },
       error: (e) => {
         this.clearEditRequest();
@@ -719,14 +800,19 @@ export class PatientsComponent implements OnInit, AfterViewInit {
     const id = this.editingId();
     const request = id
       ? this.api.update(id, {
+          documentNumber: this.form.documentNumber,
           firstName: this.form.firstName,
           lastName: this.form.lastName,
+          dateOfBirth: this.form.dateOfBirth,
+          sexAtBirth: this.form.sexAtBirth,
           email: this.form.email,
           phone: this.form.phone,
           occupation: this.form.occupation,
           goal: this.form.goal,
           status: this.form.status,
           rowVersion: this.form.rowVersion,
+          emailConsent: this.form.emailConsent,
+          whatsAppConsent: this.form.whatsAppConsent,
           assignedNutritionistUserId: this.form.assignedNutritionistUserId || null,
         })
       : this.api.create({

@@ -1,9 +1,11 @@
 import { DatePipe } from '@angular/common';
-import { Component, OnInit, inject, output } from '@angular/core';
+import { Component, OnInit, inject, output, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { RouterLink } from '@angular/router';
 import { PatientContextService } from '../../nucleo/contexto-paciente/patient-context.service';
 import { IconComponent } from '../icono/icon.component';
+
+const EXPANDED_KEY = 'nutrivida.patientCardExpanded';
 
 @Component({
   selector: 'app-patient-context-bar',
@@ -52,16 +54,30 @@ import { IconComponent } from '../icono/icon.component';
         <div class="patient-summary" aria-labelledby="patientSummaryTitle">
           <header class="summary-header">
             <div>
-              <p class="summary-kicker">Expediente seleccionado</p>
               <h2 id="patientSummaryTitle">{{ patient.firstName }} {{ patient.lastName }}</h2>
               <p>{{ patient.documentNumber }} · {{ age(patient.dateOfBirth) }} años</p>
             </div>
-            <span class="status-badge" [class.inactive]="!isActive(patient.status)">
-              {{ statusLabel(patient.status) }}
-            </span>
+            <div class="summary-actions">
+              <span class="status-badge" [class.inactive]="!isActive(patient.status)">
+                {{ statusLabel(patient.status) }}
+              </span>
+              <button
+                class="button button-secondary button-small"
+                type="button"
+                [attr.aria-expanded]="expanded()"
+                aria-controls="patientFacts"
+                (click)="toggleExpanded()"
+              >
+                {{ expanded() ? 'Ocultar datos' : 'Ver datos' }}
+              </button>
+              <a class="button button-secondary button-small" [routerLink]="['/pacientes', patient.id]">
+                Abrir ficha
+              </a>
+            </div>
           </header>
 
-          <dl class="patient-facts">
+          @if (expanded()) {
+          <dl class="patient-facts" id="patientFacts">
             <div>
               <dt>Fecha de nacimiento</dt>
               <dd>{{ patient.dateOfBirth | date: 'dd MMM yyyy' : 'UTC' : 'es-EC' }}</dd>
@@ -111,6 +127,7 @@ import { IconComponent } from '../icono/icon.component';
               <app-icon name="edit" /> Editar datos
             </a>
           </footer>
+          }
         </div>
       } @else if (context.detailsError()) {
         <div class="details-state details-error" role="alert">
@@ -134,6 +151,13 @@ import { IconComponent } from '../icono/icon.component';
         border: 1px solid var(--border-section);
         border-radius: var(--radius-lg);
         background: var(--surface);
+      }
+      .summary-actions {
+        display: flex;
+        flex-wrap: wrap;
+        justify-content: flex-end;
+        align-items: center;
+        gap: 0.55rem;
       }
       .context-controls {
         min-height: 4.35rem;
@@ -164,7 +188,7 @@ import { IconComponent } from '../icono/icon.component';
       .context-status {
         margin-top: 0.18rem;
         color: var(--text-muted);
-        font-size: 0.68rem;
+        font-size: 0.72rem;
       }
       select {
         width: 100%;
@@ -214,7 +238,7 @@ import { IconComponent } from '../icono/icon.component';
       }
       .summary-kicker {
         color: var(--primary);
-        font-size: 0.62rem;
+        font-size: 0.72rem;
         font-weight: 800;
         letter-spacing: 0.09em;
         text-transform: uppercase;
@@ -225,7 +249,7 @@ import { IconComponent } from '../icono/icon.component';
         border-radius: 999px;
         color: var(--primary-dark);
         background: var(--surface-muted);
-        font-size: 0.66rem;
+        font-size: 0.72rem;
         font-weight: 800;
       }
       .status-badge.inactive {
@@ -249,7 +273,7 @@ import { IconComponent } from '../icono/icon.component';
       .patient-facts dt {
         margin-bottom: 0.18rem;
         color: var(--text-muted);
-        font-size: 0.64rem;
+        font-size: 0.72rem;
         font-weight: 700;
       }
       .patient-facts dd {
@@ -271,7 +295,7 @@ import { IconComponent } from '../icono/icon.component';
         align-items: center;
         gap: 0.35rem;
         color: var(--text-muted);
-        font-size: 0.68rem;
+        font-size: 0.72rem;
       }
       .consents span.allowed {
         color: var(--primary-dark);
@@ -320,9 +344,29 @@ import { IconComponent } from '../icono/icon.component';
 export class PatientContextBarComponent implements OnInit {
   readonly context = inject(PatientContextService);
   readonly patientChange = output<string>();
+  /** Compacta por defecto: la ficha completa no debe empujar el trabajo fuera de la pantalla. */
+  readonly expanded = signal(this.readExpanded());
 
   ngOnInit(): void {
     this.context.load();
+  }
+
+  toggleExpanded(): void {
+    const next = !this.expanded();
+    this.expanded.set(next);
+    try {
+      localStorage.setItem(EXPANDED_KEY, String(next));
+    } catch {
+      // Sin almacenamiento la preferencia solo dura mientras la pantalla esté abierta.
+    }
+  }
+
+  private readExpanded(): boolean {
+    try {
+      return localStorage.getItem(EXPANDED_KEY) === 'true';
+    } catch {
+      return false;
+    }
   }
 
   selectPatient(id: string): void {
@@ -349,13 +393,15 @@ export class PatientContextBarComponent implements OnInit {
     return value === 1 ? 'Masculino' : value === 0 ? 'Femenino' : 'No especificado';
   }
 
-  isActive(status: string): boolean {
-    return status === 'Active' || status === 'Activo' || status === '0';
+  isActive(status: string | number): boolean {
+    const value = String(status);
+    return value === 'Active' || value === 'Activo' || value === '0';
   }
 
-  statusLabel(status: string): string {
-    if (status === 'Archived' || status === 'Archivado' || status === '2') return 'Archivado';
-    if (status === 'Paused' || status === 'Pausado' || status === '1') return 'Pausado';
+  statusLabel(status: string | number): string {
+    const value = String(status);
+    if (value === 'Archived' || value === 'Archivado' || value === '2') return 'Archivado';
+    if (value === 'Paused' || value === 'Pausado' || value === '1') return 'Pausado';
     return 'Activo';
   }
 }

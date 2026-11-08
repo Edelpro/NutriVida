@@ -79,6 +79,7 @@ public sealed class HealthEndpointTests : IClassFixture<WebApplicationFactory<Pr
 
     [Theory]
     [InlineData("/api/audit")]
+    [InlineData("/api/consultations/by-patient/67259895-e69d-4478-b1e0-0b30df36ae40")]
     [InlineData("/api/reports/clinical-summary.pdf?patientId=67259895-e69d-4478-b1e0-0b30df36ae40")]
     [InlineData("/api/foods/imports")]
     [InlineData("/api/foods/import-template")]

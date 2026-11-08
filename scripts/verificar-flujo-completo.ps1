@@ -13,10 +13,13 @@ $loginBody = @{ email = $Email; password = $Password } | ConvertTo-Json
 $login = Invoke-RestMethod -Method Post -Uri "$ApiBaseUrl/auth/login" -ContentType 'application/json' -Body (ConvertTo-Utf8Body $loginBody)
 $headers = @{ Authorization = "Bearer $($login.accessToken)" }
 
+$nutritionists = Invoke-RestMethod -Method Get -Uri "$ApiBaseUrl/users/nutritionists" -Headers $headers
+$nutritionistId = @($nutritionists)[0].id
 $stamp = Get-Date -Format 'yyyyMMddHHmmss'
 $document = "QA-$stamp"
 $patientBody = @{
     documentNumber = $document
+    assignedNutritionistUserId = $nutritionistId
     firstName = 'Paciente'
     lastName = "Prueba Integral $stamp"
     dateOfBirth = '1991-04-18'
@@ -59,9 +62,11 @@ if (!$invalidBristolRejected) { throw 'La API no rechazo un tipo de Bristol fuer
 $assessment = Invoke-RestMethod -Method Post -Uri "$ApiBaseUrl/patients/$patientId/assessments" -Headers $headers -ContentType 'application/json' -Body (ConvertTo-Utf8Body $assessmentBody)
 
 $anthropometryBody = @{
+    measuredOn = (Get-Date).ToString('yyyy-MM-dd')
     weightKg = 68.4
     heightCm = 164
     waistCm = 82
+    hipCm = 101
     bodyFatPercent = 29
     notes = 'Medicion sintetica para verificacion funcional.'
 } | ConvertTo-Json
@@ -89,9 +94,10 @@ $energyBody = @{
 } | ConvertTo-Json
 $energy = Invoke-RestMethod -Method Post -Uri "$ApiBaseUrl/energy/calculate" -Headers $headers -ContentType 'application/json' -Body (ConvertTo-Utf8Body $energyBody)
 
-$weekStart = (Get-Date).Date.AddDays(-(([int](Get-Date).DayOfWeek + 6) % 7)).ToString('yyyy-MM-dd')
 $followUpBody = @{
-    weekStartsOn = $weekStart
+    followUpDate = (Get-Date).ToString('yyyy-MM-dd')
+    objectiveStatus = 1
+    adjustments = 'Sin ajustes; dato sintetico.'
     weightKg = 68.1
     exerciseMinutes = 150
     exerciseType = 'Caminata moderada de prueba'
@@ -105,7 +111,7 @@ $followUp = Invoke-RestMethod -Method Post -Uri "$ApiBaseUrl/patients/$patientId
 
 $consultationBody = @{
     patientId = $patientId
-    startsAtUtc = (Get-Date).ToUniversalTime().AddHours(2).ToString('o')
+    startsAtUtc = (Get-Date).ToUniversalTime().AddDays((Get-Random -Minimum 30 -Maximum 600)).AddMinutes((Get-Random -Maximum 1440)).ToString('o')
     durationMinutes = 45
     reason = 'Atencion sintetica de control de calidad'
 } | ConvertTo-Json
@@ -154,6 +160,7 @@ $menuBody = @{
 } | ConvertTo-Json -Depth 6
 try {
     $menu = Invoke-RestMethod -Method Post -Uri "$ApiBaseUrl/menu-plans" -Headers $headers -ContentType 'application/json' -Body (ConvertTo-Utf8Body $menuBody)
+    Invoke-RestMethod -Method Post -Uri "$ApiBaseUrl/menu-plans/$($menu.id)/approve" -Headers $headers | Out-Null
 }
 catch {
     $response = $_.Exception.Response

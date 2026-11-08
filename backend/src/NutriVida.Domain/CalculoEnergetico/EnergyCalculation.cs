@@ -17,4 +17,5 @@ public sealed class EnergyCalculation : BaseEntity
     public decimal GoalAdjustmentKcal { get; set; }
     public decimal RestingEnergyKcal { get; set; }
     public decimal TotalEnergyKcal { get; set; }
+    public string CalculatedByName { get; set; } = string.Empty;
 }

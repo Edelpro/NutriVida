@@ -28,7 +28,7 @@ public sealed class WhatsAppCloudServiceTests
             Encoding.UTF8.GetBytes("%PDF-test"),
             "reporte.pdf",
             "Tu plan está listo",
-            "593958885668"), CancellationToken.None);
+            "593000000000"), CancellationToken.None);
 
         Assert.Equal("media-123", result.MediaId);
         Assert.Equal("wamid.test-456", result.MessageId);
@@ -45,7 +45,7 @@ public sealed class WhatsAppCloudServiceTests
             {
                 Assert.Equal("https://graph.facebook.com/v23.0/123456789/messages", send.Uri);
                 Assert.Equal("application/json; charset=utf-8", send.ContentType);
-                Assert.Contains("\"to\":\"593958885668\"", send.Body);
+                Assert.Contains("\"to\":\"593000000000\"", send.Body);
                 Assert.Contains("\"type\":\"document\"", send.Body);
                 Assert.Contains("\"id\":\"media-123\"", send.Body);
                 Assert.Equal("Bearer secret-token", send.Authorization);
@@ -81,7 +81,7 @@ public sealed class WhatsAppCloudServiceTests
             NullLogger<WhatsAppCloudService>.Instance);
 
         var exception = await Assert.ThrowsAsync<WhatsAppCloudException>(() => service.SendAsync(
-            new WhatsAppDocument([1, 2, 3], "reporte.pdf", "Plan", "593958885668"),
+            new WhatsAppDocument([1, 2, 3], "reporte.pdf", "Plan", "593000000000"),
             CancellationToken.None));
 
         Assert.Equal(400, exception.ProviderStatusCode);

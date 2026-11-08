@@ -10,6 +10,7 @@ public sealed class FoodItem : BaseEntity
     public FoodCatalogSource Source { get; set; }
     public string Name { get; set; } = string.Empty;
     public string Group { get; set; } = string.Empty;
+    public string ExchangeGroup { get; set; } = string.Empty;
     public decimal PortionGrams { get; set; }
     public string HouseholdMeasure { get; set; } = string.Empty;
     public decimal EnergyKcal { get; set; }

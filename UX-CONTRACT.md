@@ -61,7 +61,7 @@ El recetario admite una fotografía opcional validada en cliente y servidor (JPG
 ## Dataset navigation
 
 - Ruta del plan nutricional: **Catálogo → Platos → Menú del paciente → Seguimiento**. La ruta comunica posición, no finalización; una etapa anterior no se marca como completada sin evidencia de datos.
-- El selector `Paciente activo` abre una ficha de identificación y contacto en modo lectura. Cambiar la selección nunca edita ni guarda datos; `Editar datos` abre el formulario canónico del módulo Pacientes y exige guardado explícito.
+- El selector `Paciente activo` muestra nombre, identificación, edad y estado; `Ver datos` despliega el contacto y el objetivo en modo lectura y recuerda la preferencia; `Abrir ficha` lleva a la ficha completa del paciente. Cambiar la selección nunca edita ni guarda datos; `Editar datos` abre el formulario canónico del módulo Pacientes y exige guardado explícito.
 
 - Admin tables: server pagination.
 - Exploratory lists: explicit load more.
@@ -79,6 +79,8 @@ El recetario admite una fotografía opcional validada en cliente y servidor (JPG
 | Select patient              | Selector Paciente activo | stable selector        | latest saved clinical summary | expediente actualizado      | retry patient data                                       | summary heading                  | This contract         |
 | Edit patient from context   | Editar datos             | stable patient dialog  | patient list/current context  | Paciente actualizado        | preserve form + retry                                    | patient summary                  | This contract         |
 | Edit assessment             | Editar evaluación        | stable busy button     | saved clinical summary        | Evaluación actualizada      | preserve form + retry                                    | summary heading                  | `PRODUCT.md`          |
+| Create anthropometry        | Nueva medición           | stable busy button     | same anthropometry history    | Medición guardada           | preserve form + field errors                             | history heading                  | `PRODUCT.md`          |
+| Edit anthropometry          | Editar                   | stable busy button     | same anthropometry history    | Medición actualizada        | preserve form + retry                                    | edited row/history               | `PRODUCT.md`          |
 | Login                       | Ingresar                 | stable busy button     | requested protected route     | authenticated shell         | generic credential error                                 | page heading                     | `docs/SECURITY.md`    |
 | First password change       | Guardar y continuar      | stable busy button     | dashboard                     | Contraseña actualizada      | preserve fields + inline error                           | first invalid field/card heading | `docs/SECURITY.md`    |
 | Request nutritionist access | Solicitar acceso         | stable busy button     | same card                     | solicitud pendiente enviada | preserve values + duplicate explanation                  | request summary                  | `docs/SECURITY.md`    |
@@ -96,6 +98,7 @@ El recetario admite una fotografía opcional validada en cliente y servidor (JPG
 | Apply message template      | Usar plantilla           | stable button          | same messaging form           | Mensaje base aplicado       | editable subject/body; prepared action cleared           | message subject                  | `PRODUCT.md`          |
 | Change role/status          | Guardar cambios          | confirmation then busy | same paginated list           | Cambios guardados           | dialog preserves values                                  | edited row/list heading          | `docs/SECURITY.md`    |
 | Prepare message             | Preparar envío           | stable busy button     | same page                     | direct channel link         | preserve message + consent guidance                      | channel action                   | `docs/SECURITY.md`    |
+| Register contact consent    | Registrar autorización   | stable busy button     | same messaging form           | autorización registrada     | preserve draft; require explicit patient authorization   | consent guidance / prepare action | `docs/SECURITY.md`    |
 | Edit                        | Guardar cambios          | stable busy button     | stay in clinical workflow     | Cambios guardados           | preserve values + retry                                  | page heading                     | `PRODUCT.md`          |
 | Delete                      | unavailable              | n/a                    | n/a                           | n/a                         | n/a                                                      | n/a                              | `docs/SECURITY.md`    |
 | Search                      | Buscar pacientes         | table overlay          | same URL                      | result count                | retry + keep query                                       | search/results                   | This contract         |

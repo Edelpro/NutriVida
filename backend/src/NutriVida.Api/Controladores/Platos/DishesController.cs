@@ -3,6 +3,7 @@ using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using NutriVida.Api.Services.Time;
 using NutriVida.Domain.MenuPlanning;
 using NutriVida.Infrastructure.Persistence;
 
@@ -64,7 +65,8 @@ public sealed class DishesController(NutriVidaDbContext db) : ControllerBase
         if (validation.Error is not null) return ValidationProblem(validation.Error);
 
         var dish = new Dish { ClinicId = clinicId };
-        Apply(request, dish, validation.Ingredients!);
+        Apply(request, dish);
+        dish.Ingredients = validation.Ingredients!;
         db.Dishes.Add(dish);
         await db.SaveChangesAsync(cancellationToken);
         return Created($"/api/dishes/{dish.Id}", ToResponse(dish));
@@ -105,8 +107,12 @@ public sealed class DishesController(NutriVidaDbContext db) : ControllerBase
         var validation = await ValidateAndBuildIngredients(request, cancellationToken);
         if (validation.Error is not null) return ValidationProblem(validation.Error);
 
+        // Se añaden de forma explícita: con un Id ya generado, EF trataría las filas nuevas
+        // asignadas a la colección como existentes e intentaría actualizarlas.
         db.DishIngredients.RemoveRange(dish.Ingredients);
-        Apply(request, dish, validation.Ingredients!);
+        Apply(request, dish);
+        foreach (var ingredient in validation.Ingredients!) ingredient.DishId = dish.Id;
+        db.DishIngredients.AddRange(validation.Ingredients);
         await db.SaveChangesAsync(cancellationToken);
         return Ok(ToResponse(dish));
     }
@@ -132,7 +138,7 @@ public sealed class DishesController(NutriVidaDbContext db) : ControllerBase
             return ("Completa nombre, tiempo de comida y preparación.", null);
         if (request.Ingredients.Count is < 1 or > 40)
             return ("Agrega entre 1 y 40 ingredientes.", null);
-        if (request.CostReferenceDate == default || request.CostReferenceDate > DateOnly.FromDateTime(DateTime.Today))
+        if (request.CostReferenceDate == default || request.CostReferenceDate > ClinicClock.Today())
             return ("La fecha de referencia del costo debe ser válida y no puede estar en el futuro.", null);
         if (request.Ingredients.Any(x => x.FoodItemId == Guid.Empty))
             return ("Selecciona un alimento válido en cada ingrediente.", null);
@@ -170,7 +176,7 @@ public sealed class DishesController(NutriVidaDbContext db) : ControllerBase
         return (null, ingredients);
     }
 
-    private static void Apply(DishRequest request, Dish dish, List<DishIngredient> ingredients)
+    private static void Apply(DishRequest request, Dish dish)
     {
         dish.Name = request.Name.Trim();
         dish.MealName = request.MealName.Trim();
@@ -181,7 +187,6 @@ public sealed class DishesController(NutriVidaDbContext db) : ControllerBase
         dish.CostNotes = request.CostNotes.Trim();
         dish.ImageUrl = request.ImageUrl?.Trim() ?? string.Empty;
         dish.VideoUrl = request.VideoUrl?.Trim() ?? string.Empty;
-        dish.Ingredients = ingredients;
     }
 
     private bool TryGetClinicId(out Guid clinicId) =>

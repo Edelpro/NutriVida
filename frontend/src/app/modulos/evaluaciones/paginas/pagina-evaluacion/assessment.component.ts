@@ -1,5 +1,9 @@
-import { DatePipe, SlicePipe } from '@angular/common';
+import { DatePipe, DecimalPipe, SlicePipe } from '@angular/common';
 import { Component, effect, inject, signal } from '@angular/core';
+import { RouterLink } from '@angular/router';
+import { DIAGNOSIS_CODE_GROUPS, OTHER_DIAGNOSIS_CODE, findDiagnosisCode } from '../../modelos/diagnosis-codes';
+import { Recall24hRow, parseRecall, recallTotals } from '../../modelos/recall-24h';
+import { Recall24hComponent } from './recall-24h.component';
 import { FormsModule, NgForm } from '@angular/forms';
 import { forkJoin } from 'rxjs';
 import { ApiService, AssessmentRecord, DiagnosisRecord } from '../../../../nucleo/api.service';
@@ -16,16 +20,20 @@ import { isLegacySleepQuality, SLEEP_QUALITY_OPTIONS } from '../../modelos/calid
   selector: 'app-assessment',
   imports: [
     FormsModule,
+    RouterLink,
     DatePipe,
     SlicePipe,
     IconComponent,
+    DecimalPipe,
     PatientContextBarComponent,
     QuickTemplatesComponent,
+    Recall24hComponent,
   ],
   template: ` <div class="page assessment-page">
     <div class="breadcrumbs">
-      <span>Pacientes</span><app-icon name="arrow" /><span
-        >{{ patientContext.selected()?.firstName }} {{ patientContext.selected()?.lastName }}</span
+      <a routerLink="/pacientes">Pacientes</a><app-icon name="arrow" /><a
+        [routerLink]="['/pacientes', patientContext.selectedId()]"
+        >{{ patientContext.selected()?.firstName }} {{ patientContext.selected()?.lastName }}</a
       ><app-icon name="arrow" /><strong>{{
         editorOpen() ? (editingId() ? 'Editar evaluación' : 'Nueva evaluación') : 'Expediente'
       }}</strong>
@@ -38,13 +46,9 @@ import { isLegacySleepQuality, SLEEP_QUALITY_OPTIONS } from '../../modelos/calid
           Historia integral para sustentar el diagnóstico y el plan de intervención.
         </p>
       </div>
-      <span
-        class="badge"
-        [class.badge-warning]="editorOpen()"
-        [class.badge-success]="!editorOpen()"
-      >
-        {{ editorOpen() ? 'Edición activa' : 'Datos guardados' }}
-      </span>
+      @if (editorOpen()) {
+        <span class="badge badge-warning">Edición activa</span>
+      }
     </header>
     <app-patient-context-bar />
 
@@ -94,6 +98,76 @@ import { isLegacySleepQuality, SLEEP_QUALITY_OPTIONS } from '../../modelos/calid
                 <div>
                   <dt>Horarios y contexto</dt>
                   <dd>{{ record.eatingSchedule || 'Sin información' }}</dd>
+                </div>
+              </dl>
+              @if (savedRecall(record).length) {
+                <div class="data-table-wrap saved-recall">
+                  <table class="data-table">
+                    <thead>
+                      <tr>
+                        <th>Tiempo</th>
+                        <th>Alimento</th>
+                        <th>Gramos</th>
+                        <th>Kcal</th>
+                        <th>Proteína</th>
+                        <th>H. carbono</th>
+                        <th>Grasa</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      @for (row of savedRecall(record); track $index) {
+                        <tr>
+                          <td>{{ row.mealName }}</td>
+                          <td>{{ row.foodName }}</td>
+                          <td>{{ row.grams | number: '1.0-1' }} g</td>
+                          <td>{{ row.energyKcal | number: '1.0-1' }}</td>
+                          <td>{{ row.proteinG | number: '1.0-1' }} g</td>
+                          <td>{{ row.carbohydrateG | number: '1.0-1' }} g</td>
+                          <td>{{ row.fatG | number: '1.0-1' }} g</td>
+                        </tr>
+                      }
+                    </tbody>
+                    <tfoot>
+                      @if (savedRecallTotals(record); as totals) {
+                        <tr>
+                          <th colspan="3">Total del día</th>
+                          <th>{{ totals.energyKcal | number: '1.0-0' }} kcal</th>
+                          <th>{{ totals.proteinG | number: '1.0-1' }} g ({{ totals.proteinPercent }} %)</th>
+                          <th>{{ totals.carbohydrateG | number: '1.0-1' }} g ({{ totals.carbohydratePercent }} %)</th>
+                          <th>{{ totals.fatG | number: '1.0-1' }} g ({{ totals.fatPercent }} %)</th>
+                        </tr>
+                      }
+                    </tfoot>
+                  </table>
+                </div>
+              }
+            </section>
+            <section class="record-group record-wide">
+              <p class="eyebrow">Antecedentes clínicos</p>
+              <dl class="record-facts">
+                <div>
+                  <dt>Antecedentes personales</dt>
+                  <dd>{{ record.medicalHistory || 'No registrados' }}</dd>
+                </div>
+                <div>
+                  <dt>Antecedentes familiares</dt>
+                  <dd>{{ record.familyHistory || 'No registrados' }}</dd>
+                </div>
+                <div>
+                  <dt>Medicación</dt>
+                  <dd>{{ record.medications || 'No registrada' }}</dd>
+                </div>
+                <div>
+                  <dt>Suplementos</dt>
+                  <dd>{{ record.supplements || 'No registrados' }}</dd>
+                </div>
+                <div>
+                  <dt>Laboratorios</dt>
+                  <dd>{{ record.labResults || 'No registrados' }}</dd>
+                </div>
+                <div>
+                  <dt>Embarazo o lactancia</dt>
+                  <dd>{{ record.reproductiveStatus || 'No registrado' }}</dd>
                 </div>
               </dl>
             </section>
@@ -164,7 +238,24 @@ import { isLegacySleepQuality, SLEEP_QUALITY_OPTIONS } from '../../modelos/calid
             </section>
             @if (activeDiagnosis(); as diagnosis) {
               <section class="record-group record-wide diagnosis-summary">
-                <p class="eyebrow">Diagnóstico PES vinculado</p>
+                <div class="diagnosis-head">
+                  <p class="eyebrow">Diagnóstico PES vinculado</p>
+                  @if (isDiagnosisApproved(diagnosis)) {
+                    <span class="badge">
+                      Aprobado por {{ diagnosis.approvedByName || diagnosis.professionalName }}
+                    </span>
+                  } @else {
+                    <span class="badge badge-warning">Borrador</span>
+                    <button
+                      type="button"
+                      class="button button-primary button-small"
+                      [disabled]="approvingDiagnosis()"
+                      (click)="approveDiagnosis(diagnosis)"
+                    >
+                      {{ approvingDiagnosis() ? 'Aprobando…' : 'Aprobar diagnóstico' }}
+                    </button>
+                  }
+                </div>
                 <dl class="record-facts">
                   <div>
                     <dt>Código o dominio</dt>
@@ -205,13 +296,18 @@ import { isLegacySleepQuality, SLEEP_QUALITY_OPTIONS } from '../../modelos/calid
     }
 
     @if (editorOpen()) {
-      <app-quick-templates scope="assessment" (templateSelected)="aplicarPlantilla($event)" />
+      <details class="template-disclosure">
+        <summary>Usar una plantilla rápida <small>Opcional</small></summary>
+        <app-quick-templates scope="assessment" (templateSelected)="aplicarPlantilla($event)" />
+      </details>
 
       <ol class="steps" aria-label="Secciones de la evaluación">
         @for (step of steps; track step.label; let index = $index) {
-          <li [class.current]="index === 1" [class.done]="index === 0">
-            <span>{{ index === 0 ? '✓' : index + 1 }}</span
-            ><small>{{ step.label }}</small>
+          <li>
+            <button type="button" class="step-link" (click)="goToSection(step.target)">
+              <span>{{ index + 1 }}</span
+              ><small>{{ step.label }}</small>
+            </button>
           </li>
         }
       </ol>
@@ -219,27 +315,30 @@ import { isLegacySleepQuality, SLEEP_QUALITY_OPTIONS } from '../../modelos/calid
       <form #assessmentForm="ngForm" novalidate (ngSubmit)="save(assessmentForm)">
         <div class="assessment-layout">
           <div class="sections">
-            <section class="surface">
+            <section class="surface" id="seccion-historia">
               <header class="surface-header">
                 <div>
-                  <p class="eyebrow">02 · Historia alimentaria</p>
+                  <p class="eyebrow">Historia alimentaria</p>
                   <h2>Ingesta diaria y horarios</h2>
                 </div>
                 <app-icon name="food" />
               </header>
               <div class="surface-body form-grid">
+                <div class="col-12">
+                  <app-recall-24h [(rows)]="model.recall24h" />
+                </div>
                 <div class="field col-12">
-                  <label class="required" for="intake">Recordatorio de ingesta habitual</label
+                  <label [class.required]="!model.recall24h.length" for="intake">Notas de la ingesta habitual</label
                   ><textarea
                     id="intake"
                     name="dailyIntake"
                     [(ngModel)]="model.dailyIntake"
-                    required
+                    [required]="!model.recall24h.length"
                     maxlength="4000"
                     placeholder="Describe alimentos, bebidas, cantidades y preparaciones desde que despierta hasta que duerme."
                   ></textarea
                   ><small
-                    >Incluye agua, suplementos, fines de semana y comidas fuera de casa.</small
+                    >Opcional si llenaste la tabla. Incluye agua, fines de semana y comidas fuera de casa.</small
                   >
                 </div>
                 <div class="field col-12">
@@ -258,7 +357,51 @@ import { isLegacySleepQuality, SLEEP_QUALITY_OPTIONS } from '../../modelos/calid
                 </div>
               </div>
             </section>
-            <section class="surface">
+            <section class="surface" id="seccion-antecedentes">
+              <header class="surface-header">
+                <div>
+                  <p class="eyebrow">Antecedentes clínicos</p>
+                  <h2>Salud, medicación y laboratorios</h2>
+                </div>
+                <app-icon name="clipboard" />
+              </header>
+              <div class="surface-body form-grid">
+                <div class="field col-6">
+                  <label for="medicalHistory">Antecedentes personales</label
+                  ><textarea id="medicalHistory" name="medicalHistory" rows="2" maxlength="2000" [(ngModel)]="model.medicalHistory"></textarea
+                  ><small>Enfermedades, cirugías y condiciones actuales.</small>
+                </div>
+                <div class="field col-6">
+                  <label for="familyHistory">Antecedentes familiares</label
+                  ><textarea id="familyHistory" name="familyHistory" rows="2" maxlength="2000" [(ngModel)]="model.familyHistory"></textarea
+                  ><small>Diabetes, hipertensión, dislipidemia u otras.</small>
+                </div>
+                <div class="field col-6">
+                  <label for="medications">Medicación actual</label
+                  ><textarea id="medications" name="medications" rows="2" maxlength="1000" [(ngModel)]="model.medications"></textarea
+                  ><small>Nombre y dosis si se conocen.</small>
+                </div>
+                <div class="field col-6">
+                  <label for="supplements">Suplementos</label
+                  ><textarea id="supplements" name="supplements" rows="2" maxlength="1000" [(ngModel)]="model.supplements"></textarea
+                  ><small>Vitaminas, proteínas, herbales u otros.</small>
+                </div>
+                <div class="field col-6">
+                  <label for="labResults">Laboratorios recientes</label
+                  ><textarea id="labResults" name="labResults" rows="2" maxlength="2000" [(ngModel)]="model.labResults"></textarea
+                  ><small>Resultado y fecha. Ej.: glucosa 95 mg/dL, 10/2026.</small>
+                </div>
+                <div class="field col-6">
+                  <label for="reproductiveStatus">Embarazo o lactancia</label
+                  ><select id="reproductiveStatus" name="reproductiveStatus" [(ngModel)]="model.reproductiveStatus">
+                    <option value="">No aplica o no registrado</option>
+                    <option>Embarazo</option>
+                    <option>Lactancia</option></select
+                  ><small>Las ecuaciones energéticas no incluyen este ajuste: valóralo clínicamente.</small>
+                </div>
+              </div>
+            </section>
+            <section class="surface" id="seccion-alergias">
               <header class="surface-header">
                 <div>
                   <p class="eyebrow">Seguridad alimentaria</p>
@@ -291,7 +434,7 @@ import { isLegacySleepQuality, SLEEP_QUALITY_OPTIONS } from '../../modelos/calid
                 </div>
               </div>
             </section>
-            <section class="surface">
+            <section class="surface" id="seccion-estilo">
               <header class="surface-header">
                 <div>
                   <p class="eyebrow">Estilo de vida</p>
@@ -358,7 +501,7 @@ import { isLegacySleepQuality, SLEEP_QUALITY_OPTIONS } from '../../modelos/calid
                 </div>
               </div>
             </section>
-            <section class="surface">
+            <section class="surface" id="seccion-digestiva">
               <header class="surface-header">
                 <div>
                   <p class="eyebrow">Salud digestiva</p>
@@ -434,7 +577,7 @@ import { isLegacySleepQuality, SLEEP_QUALITY_OPTIONS } from '../../modelos/calid
                 </div>
               </div>
             </section>
-            <section class="surface">
+            <section class="surface" id="seccion-diagnostico">
               <header class="surface-header">
                 <div>
                   <p class="eyebrow">Problema nutricional</p>
@@ -444,47 +587,65 @@ import { isLegacySleepQuality, SLEEP_QUALITY_OPTIONS } from '../../modelos/calid
               </header>
               <div class="surface-body form-grid">
                 <div class="field col-4">
-                  <label class="required" for="problemCode">Código o dominio</label>
-                  <input
-                    id="problemCode"
-                    name="problemCode"
-                    [(ngModel)]="model.problemCode"
-                    [required]="!editingId() || !!editingDiagnosisId()"
-                    maxlength="80"
-                    placeholder="Ej. NI-5.8.5"
-                  />
-                  <small>Según la terminología aprobada por la clínica.</small>
+                  <label [class.required]="diagnosisStarted()" for="problemCodeSelect">Código o dominio</label>
+                  <select
+                    id="problemCodeSelect"
+                    name="problemCodeSelect"
+                    [ngModel]="codeSelection()"
+                    (ngModelChange)="selectCode($event)"
+                  >
+                    <option value="">Selecciona un código</option>
+                    @for (group of diagnosisGroups; track group.domain) {
+                      <optgroup [label]="group.domain">
+                        @for (item of group.codes; track item.code) {
+                          <option [value]="item.code">{{ item.code }} · {{ item.label }}</option>
+                        }
+                      </optgroup>
+                    }
+                    <option [value]="otherCode">Otro código…</option>
+                  </select>
+                  @if (codeSelection() === otherCode) {
+                    <label for="problemCode">Escribe el código</label>
+                    <input
+                      id="problemCode"
+                      name="problemCode"
+                      [(ngModel)]="model.problemCode"
+                      [required]="diagnosisStarted()"
+                      maxlength="80"
+                    />
+                  }
+                  <small>Al elegirlo se propone el problema; puedes redactarlo.</small>
                 </div>
                 <div class="field col-8">
-                  <label class="required" for="problemStatement">Problema</label>
+                  <label [class.required]="diagnosisStarted()" for="problemStatement">Problema</label>
                   <input
                     id="problemStatement"
                     name="problemStatement"
                     [(ngModel)]="model.problemStatement"
-                    [required]="!editingId() || !!editingDiagnosisId()"
+                    [required]="diagnosisStarted()"
                     maxlength="1000"
                     placeholder="Problema nutricional identificable"
                   />
                   <small>No se genera automáticamente.</small>
                 </div>
                 <div class="field col-6">
-                  <label class="required" for="etiology">Etiología relacionada</label>
+                  <label [class.required]="diagnosisStarted()" for="etiology">Etiología relacionada</label>
                   <textarea
                     id="etiology"
                     name="etiology"
                     [(ngModel)]="model.etiology"
-                    [required]="!editingId() || !!editingDiagnosisId()"
+                    [required]="diagnosisStarted()"
                     maxlength="2000"
                   ></textarea>
                   <small>Causa o factor modificable respaldado por la evaluación.</small>
                 </div>
                 <div class="field col-6">
-                  <label class="required" for="signs">Signos y síntomas</label>
+                  <label [class.required]="diagnosisStarted()" for="signs">Signos y síntomas</label>
                   <textarea
                     id="signs"
                     name="signs"
                     [(ngModel)]="model.signsAndSymptoms"
-                    [required]="!editingId() || !!editingDiagnosisId()"
+                    [required]="diagnosisStarted()"
                     maxlength="2000"
                   ></textarea>
                   <small>Evidencia medible que permitirá el seguimiento.</small>
@@ -505,8 +666,12 @@ import { isLegacySleepQuality, SLEEP_QUALITY_OPTIONS } from '../../modelos/calid
             <div class="surface-body">
               <div class="summary-row">
                 <span>Ingesta</span
-                ><b [class.missing]="!model.dailyIntake">{{
-                  model.dailyIntake ? 'Registrada' : 'Pendiente'
+                ><b [class.missing]="!model.dailyIntake && !model.recall24h.length">{{
+                  model.recall24h.length
+                    ? (recallEnergy() | number: '1.0-0') + ' kcal'
+                    : model.dailyIntake
+                      ? 'Registrada'
+                      : 'Pendiente'
                 }}</b>
               </div>
               <div class="summary-row">
@@ -563,7 +728,7 @@ import { isLegacySleepQuality, SLEEP_QUALITY_OPTIONS } from '../../modelos/calid
           <p class="eyebrow">Expediente</p>
           <h2>Evaluaciones guardadas</h2>
         </div>
-        <span class="caption">{{ assessments().length }} registros</span>
+        <span class="caption">{{ assessments().length }} {{ assessments().length === 1 ? 'registro' : 'registros' }}</span>
       </header>
       <div class="data-table-wrap">
         <table class="data-table">
@@ -663,6 +828,9 @@ import { isLegacySleepQuality, SLEEP_QUALITY_OPTIONS } from '../../modelos/calid
         margin-bottom: 1rem;
         color: var(--text-muted);
         font-size: 0.72rem;
+      }
+      .breadcrumbs a {
+        color: inherit;
       }
       .breadcrumbs app-icon {
         width: 0.8rem;
@@ -821,7 +989,7 @@ import { isLegacySleepQuality, SLEEP_QUALITY_OPTIONS } from '../../modelos/calid
         color: var(--primary-dark);
       }
       .bristol label span {
-        font-size: 0.63rem;
+        font-size: 0.72rem;
         color: var(--text-muted);
       }
       .bristol > small {
@@ -907,7 +1075,7 @@ import { isLegacySleepQuality, SLEEP_QUALITY_OPTIONS } from '../../modelos/calid
       }
       .record-group dt {
         color: var(--text-muted);
-        font-size: 0.7rem;
+        font-size: 0.72rem;
         font-weight: 700;
         letter-spacing: 0.02em;
       }
@@ -929,6 +1097,28 @@ import { isLegacySleepQuality, SLEEP_QUALITY_OPTIONS } from '../../modelos/calid
       }
       .record-full {
         grid-column: 1 / -1;
+      }
+      .step-link {
+        padding: 0;
+        display: contents;
+        font: inherit;
+        color: inherit;
+        background: none;
+        border: 0;
+        cursor: pointer;
+      }
+      .saved-recall {
+        margin-top: 0.8rem;
+      }
+      .diagnosis-head {
+        margin-bottom: 0.6rem;
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 0.6rem;
+      }
+      .diagnosis-head .eyebrow {
+        margin: 0;
       }
       .diagnosis-summary {
         background: rgba(249, 246, 236, 0.55);
@@ -965,7 +1155,7 @@ import { isLegacySleepQuality, SLEEP_QUALITY_OPTIONS } from '../../modelos/calid
       .save-bar small {
         margin-top: 0.18rem;
         color: var(--text-muted);
-        font-size: 0.7rem;
+        font-size: 0.72rem;
       }
       @media (max-width: 1120px) {
         .assessment-layout {
@@ -1043,16 +1233,23 @@ export class AssessmentComponent {
   readonly assessmentsLoading = signal(false);
   readonly assessmentsError = signal('');
   readonly archiveTarget = signal<AssessmentRecord | null>(null);
+  readonly approvingDiagnosis = signal(false);
+  readonly diagnosisGroups = DIAGNOSIS_CODE_GROUPS;
+  readonly otherCode = OTHER_DIAGNOSIS_CODE;
+  private readonly writingOtherCode = signal(false);
   readonly sleepQualityOptions = SLEEP_QUALITY_OPTIONS;
   private loadedPatientId = '';
   readonly steps = [
-    { label: 'Datos generales' },
-    { label: 'Historia' },
-    { label: 'Antropometría' },
-    { label: 'Cálculos' },
-    { label: 'Diagnóstico' },
-    { label: 'Plan' },
+    { label: 'Historia', target: 'seccion-historia' },
+    { label: 'Antecedentes', target: 'seccion-antecedentes' },
+    { label: 'Alergias', target: 'seccion-alergias' },
+    { label: 'Estilo de vida', target: 'seccion-estilo' },
+    { label: 'Digestivo', target: 'seccion-digestiva' },
+    { label: 'Diagnóstico', target: 'seccion-diagnostico' },
   ];
+  goToSection(id: string): void {
+    document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
   readonly bristolTypes = [
     { value: 1, label: 'Bolitas duras' },
     { value: 2, label: 'Grumosa' },
@@ -1077,6 +1274,63 @@ export class AssessmentComponent {
         this.activeAssessment.set(null);
         this.activeDiagnosis.set(null);
       }
+    });
+  }
+
+  diagnosisStarted(): boolean {
+    const { problemCode, problemStatement, etiology, signsAndSymptoms } = this.model;
+    return [problemCode, problemStatement, etiology, signsAndSymptoms].some((value) => value.trim().length > 0);
+  }
+
+  recallEnergy(): number {
+    return recallTotals(this.model.recall24h).energyKcal;
+  }
+
+  savedRecall(record: AssessmentRecord): Recall24hRow[] {
+    return parseRecall(record.recall24hJson);
+  }
+
+  savedRecallTotals(record: AssessmentRecord) {
+    return recallTotals(this.savedRecall(record));
+  }
+
+  codeSelection(): string {
+    const code = this.model.problemCode;
+    if (this.writingOtherCode()) return OTHER_DIAGNOSIS_CODE;
+    if (!code) return '';
+    return findDiagnosisCode(code) ? code : OTHER_DIAGNOSIS_CODE;
+  }
+
+  selectCode(value: string): void {
+    if (value === OTHER_DIAGNOSIS_CODE) {
+      this.writingOtherCode.set(true);
+      this.model.problemCode = '';
+      return;
+    }
+    this.writingOtherCode.set(false);
+    this.model.problemCode = value;
+    const match = findDiagnosisCode(value);
+    if (match && !this.model.problemStatement.trim()) this.model.problemStatement = match.label;
+  }
+
+  isDiagnosisApproved(diagnosis: DiagnosisRecord): boolean {
+    return diagnosis.status === 1 || diagnosis.status === 'Approved';
+  }
+
+  approveDiagnosis(diagnosis: DiagnosisRecord): void {
+    const patientId = this.patientContext.selectedId();
+    if (!patientId || this.approvingDiagnosis()) return;
+    this.approvingDiagnosis.set(true);
+    this.api.approveDiagnosis(patientId, diagnosis.id).subscribe({
+      next: () => {
+        this.approvingDiagnosis.set(false);
+        this.loadAssessments(patientId, true);
+        this.toast.show('success', 'Diagnóstico aprobado', 'Ya puede incluirse en lo que recibe el paciente.');
+      },
+      error: (e) => {
+        this.approvingDiagnosis.set(false);
+        this.toast.show('error', 'No se aprobó el diagnóstico', e.message);
+      },
     });
   }
 
@@ -1108,14 +1362,31 @@ export class AssessmentComponent {
     const patientId = this.patientContext.selectedId();
     if (patientId) this.loadAssessments(patientId, true);
   }
+  private valorDePlantilla(campo: string, valor: string): unknown {
+    if (campo === 'hasConstipation') return valor === 'true';
+    if (['sleepHours', 'exerciseMinutesPerWeek', 'bristolStoolType'].includes(campo)) {
+      const numero = Number(valor);
+      return Number.isFinite(numero) ? numero : null;
+    }
+    return valor;
+  }
+
   aplicarPlantilla(plantilla: QuickTemplate): void {
     const modelo = this.model as Record<string, unknown>;
     let completados = 0;
     let conservados = 0;
     for (const [campo, valor] of Object.entries(plantilla.values)) {
+      if (!valor) continue;
       const actual = modelo[campo];
-      if (actual === '' || actual === null || actual === undefined) {
-        modelo[campo] = valor;
+      // Estos dos arrancan en 0 o No en un formulario nuevo: no cuentan como dato registrado.
+      const vacio =
+        actual === '' ||
+        actual === null ||
+        actual === undefined ||
+        (campo === 'exerciseMinutesPerWeek' && actual === 0) ||
+        (campo === 'hasConstipation' && actual === false);
+      if (vacio) {
+        modelo[campo] = this.valorDePlantilla(campo, valor);
         completados += 1;
       } else {
         conservados += 1;
@@ -1185,6 +1456,13 @@ export class AssessmentComponent {
       bristolStoolType: row.bristolStoolType,
       bowelFrequency: row.bowelFrequency,
       clinicalNotes: row.clinicalNotes,
+      medicalHistory: row.medicalHistory ?? '',
+      familyHistory: row.familyHistory ?? '',
+      medications: row.medications ?? '',
+      supplements: row.supplements ?? '',
+      labResults: row.labResults ?? '',
+      reproductiveStatus: row.reproductiveStatus ?? '',
+      recall24h: parseRecall(row.recall24hJson),
       problemCode: diagnosis?.problemCode ?? '',
       problemStatement: diagnosis?.problemStatement ?? '',
       etiology: diagnosis?.etiology ?? '',
@@ -1275,10 +1553,11 @@ export class AssessmentComponent {
       .filter((_, index) => index > 0)
       .every((value) => String(value).trim().length > 0);
 
-    if (isUpdate && !diagnosisId && !hasCompleteDiagnosis) {
+    // El diagnóstico es opcional aquí: también se registra en su propio módulo.
+    if (!diagnosisId && !hasCompleteDiagnosis) {
       this.finishSave(
         patientId,
-        'Evaluación actualizada',
+        isUpdate ? 'Evaluación actualizada' : 'Evaluación guardada',
         'Los cambios quedaron guardados en el expediente.',
       );
       return;
@@ -1317,6 +1596,7 @@ export class AssessmentComponent {
     this.editorOpen.set(false);
     this.editingId.set(null);
     this.editingDiagnosisId.set(null);
+    this.writingOtherCode.set(false);
     this.model = this.emptyModel();
   }
 
@@ -1341,6 +1621,13 @@ export class AssessmentComponent {
       bristolStoolType: null as number | null,
       bowelFrequency: '',
       clinicalNotes: '',
+      medicalHistory: '',
+      familyHistory: '',
+      medications: '',
+      supplements: '',
+      labResults: '',
+      reproductiveStatus: '',
+      recall24h: [] as Recall24hRow[],
       problemCode: '',
       problemStatement: '',
       etiology: '',

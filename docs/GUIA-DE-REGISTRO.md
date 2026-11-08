@@ -78,6 +78,9 @@ En **Antropometría**, registra mediciones tomadas correctamente; para practicar
 - Peso: 72,4 kg.
 - Talla: 162 cm.
 - Cintura: 88 cm.
+- Cadera: 101 cm.
+- Grasa corporal: 32 %.
+- Observaciones: primera medición de referencia.
 
 En **Cálculo energético**:
 

@@ -10,8 +10,6 @@ export const authGuard: CanActivateChildFn = (_route, state) => {
     return router.createUrlTree(['/login'], { queryParams: { returnUrl: state.url } });
   if (auth.user()?.mustChangePassword && state.url !== '/cambiar-clave')
     return router.createUrlTree(['/cambiar-clave']);
-  if (!auth.user()?.mustChangePassword && state.url === '/cambiar-clave')
-    return router.createUrlTree(['/inicio']);
   return true;
 };
 

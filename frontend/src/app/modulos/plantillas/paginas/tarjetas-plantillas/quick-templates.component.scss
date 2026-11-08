@@ -151,3 +151,30 @@
     grid-column: auto;
   }
 }
+
+.template-content {
+  margin-bottom: 0.75rem;
+  font-size: 0.8rem;
+}
+
+.template-content summary {
+  cursor: pointer;
+  font-weight: 650;
+  color: var(--primary-dark);
+}
+
+.template-content dl {
+  margin: 0.5rem 0 0;
+  display: grid;
+  gap: 0.45rem;
+}
+
+.template-content dt {
+  font-weight: 700;
+}
+
+.template-content dd {
+  margin: 0;
+  color: var(--text-muted);
+  white-space: pre-line;
+}

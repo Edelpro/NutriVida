@@ -2,7 +2,9 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.EntityFrameworkCore;
 using System.ComponentModel.DataAnnotations;
+using NutriVida.Domain.Auditing;
 using NutriVida.Domain.Communications;
+using NutriVida.Domain.MenuPlanning;
 using NutriVida.Domain.Patients;
 using NutriVida.Api.Security;
 using NutriVida.Api.Services.Messaging;
@@ -16,8 +18,20 @@ namespace NutriVida.Api.Controllers.Communications;
 public sealed class CommunicationsController(
     NutriVidaDbContext db,
     IClinicalReportPdfService pdfService,
+    IClinicalReportDataService reportData,
+    IConfiguration configuration,
+    IEmailDocumentSender emailSender,
     IWhatsAppDocumentSender whatsAppSender) : ControllerBase
 {
+    private int SharedLinkDays => Math.Clamp(configuration.GetValue("Messaging:SharedLinkDays", 7), 1, 30);
+
+    [HttpGet("integration-status")]
+    public IActionResult IntegrationStatus() => Ok(new
+    {
+        email = new { configured = emailSender.IsConfigured, mode = emailSender.IsConfigured ? "Smtp" : "DirectLink" },
+        whatsApp = new { configured = whatsAppSender.IsConfigured, mode = whatsAppSender.IsConfigured ? "WhatsAppCloud" : "DirectLink" }
+    });
+
     [HttpGet]
     public async Task<IActionResult> List([FromQuery] Guid patientId, CancellationToken cancellationToken)
     {
@@ -52,13 +66,16 @@ public sealed class CommunicationsController(
         if (patient is null) return NotFound();
         if (request.MenuPlanId.HasValue)
         {
-            var ownsMenuPlan = await db.MenuPlans.AsNoTracking().AnyAsync(
-                x => x.Id == request.MenuPlanId.Value
+            var linkedPlan = await db.MenuPlans.AsNoTracking()
+                .Where(x => x.Id == request.MenuPlanId.Value
                     && x.PatientId == request.PatientId
-                    && !x.IsArchived,
-                cancellationToken);
-            if (!ownsMenuPlan)
+                    && !x.IsArchived)
+                .Select(x => (MenuPlanStatus?)x.Status)
+                .FirstOrDefaultAsync(cancellationToken);
+            if (linkedPlan is null)
                 return ValidationProblem("El plan seleccionado no pertenece al paciente activo o ya no está disponible.");
+            if (linkedPlan != MenuPlanStatus.Approved)
+                return Conflict(new { title = "Plan sin aprobar", detail = "Aprueba el plan en Planes de menú antes de compartirlo con el paciente." });
         }
         var consent = request.Channel == MessageChannel.Email ? patient.EmailConsentAtUtc : patient.WhatsAppConsentAtUtc;
         if (!consent.HasValue) return Conflict(new { title = "Falta consentimiento", detail = "Registra el consentimiento del paciente para este canal." });
@@ -81,12 +98,18 @@ public sealed class CommunicationsController(
             SecureLinkToken = Convert.ToHexString(Guid.NewGuid().ToByteArray())
         };
         var reportUrl = $"{Request.Scheme}://{Request.Host}/api/communications/shared/{message.SecureLinkToken}/clinical-summary.pdf";
-        var bodyWithReport = $"{request.Body.Trim()}\n\nDescargar PDF nutricional: {reportUrl}\nEnlace válido por 7 días.";
+        var bodyWithReport = $"{request.Body.Trim()}\n\nDescargar PDF nutricional: {reportUrl}\nEnlace válido por {SharedLinkDays} días.";
         var encodedSubject = Uri.EscapeDataString(request.Subject.Trim());
         var encodedBody = Uri.EscapeDataString(bodyWithReport);
         var actionUrl = request.Channel == MessageChannel.Email
             ? $"mailto:{patient.Email}?subject={encodedSubject}&body={encodedBody}"
             : $"https://wa.me/{phoneDigits}?text={Uri.EscapeDataString($"{request.Subject.Trim()}\n\n{bodyWithReport}")}";
+        var canSendAutomatically = request.Channel == MessageChannel.Email
+            ? emailSender.IsConfigured
+            : whatsAppSender.IsConfigured;
+        var mode = request.Channel == MessageChannel.Email
+            ? emailSender.IsConfigured ? "Smtp" : "DirectLink"
+            : whatsAppSender.IsConfigured ? "WhatsAppCloud" : "DirectLink";
         db.MessageDispatches.Add(message);
         await db.SaveChangesAsync(cancellationToken);
         return Ok(new
@@ -97,14 +120,97 @@ public sealed class CommunicationsController(
             destination,
             actionUrl,
             reportUrl,
-            canSendAutomatically = request.Channel == MessageChannel.WhatsApp && whatsAppSender.IsConfigured,
-            mode = request.Channel == MessageChannel.WhatsApp && whatsAppSender.IsConfigured
-                ? "WhatsAppCloud"
-                : "DirectLink",
-            notice = request.Channel == MessageChannel.WhatsApp && whatsAppSender.IsConfigured
-                ? "PDF preparado. Revisa el destino y confirma el envío directo por WhatsApp."
+            canSendAutomatically,
+            mode,
+            notice = canSendAutomatically
+                ? $"PDF preparado. Revisa el destino y confirma el envío directo por {(request.Channel == MessageChannel.Email ? "correo" : "WhatsApp")}."
                 : "Se preparó un enlace directo al PDF. La persona profesional confirma el envío en correo o WhatsApp."
         });
+    }
+
+    [HttpPost("{id:guid}/send-email-document")]
+    public async Task<IActionResult> SendEmailDocument(
+        Guid id,
+        SendPreparedEmailRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (!User.TryGetClinicId(out var clinicId)) return Forbid();
+        if (!emailSender.IsConfigured)
+            return StatusCode(StatusCodes.Status503ServiceUnavailable, new ProblemDetails
+            {
+                Status = StatusCodes.Status503ServiceUnavailable,
+                Title = "El correo real no está configurado",
+                Detail = "Configura el servidor SMTP y sus credenciales como secretos antes de enviar."
+            });
+
+        var dispatch = await db.MessageDispatches.SingleOrDefaultAsync(
+            x => x.Id == id && !x.IsArchived, cancellationToken);
+        if (dispatch is null) return NotFound();
+        var patient = await db.AccessiblePatients(User)
+            .SingleOrDefaultAsync(x => x.Id == dispatch.PatientId, cancellationToken);
+        if (patient is null) return NotFound();
+        if (dispatch.Channel != MessageChannel.Email)
+            return ValidationProblem("El registro seleccionado no corresponde al canal correo.");
+        if (!patient.EmailConsentAtUtc.HasValue)
+            return Conflict(new { title = "Falta consentimiento", detail = "Registra nuevamente el consentimiento para correo antes de enviar." });
+        if (string.IsNullOrWhiteSpace(patient.Email))
+            return Conflict(new { title = "Falta correo", detail = "Registra un correo válido en el expediente antes de enviar." });
+        if (dispatch.Status == MessageStatus.Sent)
+            return Ok(new
+            {
+                dispatch.Id,
+                status = dispatch.Status.ToString(),
+                dispatch.SentAtUtc,
+                alreadySent = true,
+                notice = "Este PDF ya fue aceptado por el servidor de correo y no se volvió a enviar."
+            });
+        if (dispatch.Status == MessageStatus.Queued)
+            return Conflict(new
+            {
+                title = "Envío pendiente de confirmación",
+                detail = "No se repetirá el envío para evitar duplicados. Revisa la bandeja del destinatario."
+            });
+
+        var document = await CreateClinicalPdfAsync(patient, dispatch.MenuPlanId, cancellationToken);
+        dispatch.Status = MessageStatus.Queued;
+        await db.SaveChangesAsync(cancellationToken);
+
+        try
+        {
+            var result = await emailSender.SendAsync(new EmailDocument(
+                document.Content,
+                document.FileName,
+                dispatch.Subject,
+                $"{request.Body.Trim()}\n\nSe adjunta el informe nutricional en formato PDF.\nEste documento contiene información confidencial.",
+                patient.Email,
+                $"{patient.FirstName} {patient.LastName}"), cancellationToken);
+            dispatch.Status = MessageStatus.Sent;
+            dispatch.SentAtUtc = DateTime.UtcNow;
+            dispatch.ProviderReference = result.MessageId;
+            await db.SaveChangesAsync(cancellationToken);
+            return Ok(new
+            {
+                dispatch.Id,
+                status = dispatch.Status.ToString(),
+                dispatch.SentAtUtc,
+                alreadySent = false,
+                providerMessageId = result.MessageId,
+                destination = dispatch.DestinationMasked,
+                notice = "El servidor de correo aceptó el mensaje con el PDF adjunto."
+            });
+        }
+        catch (EmailSmtpException exception)
+        {
+            dispatch.Status = MessageStatus.Failed;
+            dispatch.ProviderReference = "Proveedor rechazó la solicitud";
+            await db.SaveChangesAsync(CancellationToken.None);
+            return StatusCode(StatusCodes.Status502BadGateway, new ProblemDetails
+            {
+                Status = StatusCodes.Status502BadGateway,
+                Title = "El correo no aceptó el PDF",
+                Detail = exception.Message
+            });
+        }
     }
 
     [HttpPost("{id:guid}/send-whatsapp-document")]
@@ -149,7 +255,7 @@ public sealed class CommunicationsController(
                 detail = "No se repetirá el envío para evitar duplicados. Revisa el teléfono o el panel de Meta."
             });
 
-        var document = await CreateClinicalPdfAsync(patient, cancellationToken);
+        var document = await CreateClinicalPdfAsync(patient, dispatch.MenuPlanId, cancellationToken);
         dispatch.Status = MessageStatus.Queued;
         await db.SaveChangesAsync(cancellationToken);
 
@@ -196,7 +302,7 @@ public sealed class CommunicationsController(
     [ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)]
     public async Task<IActionResult> SharedPdf(string token, CancellationToken cancellationToken)
     {
-        var validFrom = DateTime.UtcNow.AddDays(-7);
+        var validFrom = DateTime.UtcNow.AddDays(-SharedLinkDays);
         var dispatch = await db.MessageDispatches.AsNoTracking().SingleOrDefaultAsync(
             x => x.SecureLinkToken == token && !x.IsArchived && x.CreatedAtUtc >= validFrom,
             cancellationToken);
@@ -204,36 +310,41 @@ public sealed class CommunicationsController(
         var patient = await db.Patients.AsNoTracking().SingleOrDefaultAsync(
             x => x.Id == dispatch.PatientId && !x.IsArchived, cancellationToken);
         if (patient is null) return NotFound();
+        var consent = dispatch.Channel == MessageChannel.Email
+            ? patient.EmailConsentAtUtc
+            : patient.WhatsAppConsentAtUtc;
+        if (!consent.HasValue)
+            return NotFound(new { title = "Enlace no disponible", detail = "El enlace venció o fue archivado." });
 
-        var document = await CreateClinicalPdfAsync(patient, cancellationToken);
+        var document = await CreateClinicalPdfAsync(patient, dispatch.MenuPlanId, cancellationToken);
+        db.AuditEvents.Add(new AuditEvent
+        {
+            ClinicId = patient.ClinicId,
+            ActorEmail = "Enlace compartido",
+            Action = "DescargarEnlace",
+            EntityType = "PatientClinicalReport",
+            EntityId = patient.Id.ToString(),
+            ChangedFields = $"Envío {dispatch.Id} por {dispatch.Channel}",
+            CorrelationId = HttpContext.TraceIdentifier,
+            OccurredAtUtc = DateTime.UtcNow
+        });
+        await db.SaveChangesAsync(cancellationToken);
         return File(document.Content, "application/pdf", document.FileName);
     }
 
     private async Task<ClinicalPdfDocument> CreateClinicalPdfAsync(
         Patient patient,
+        Guid? menuPlanId,
         CancellationToken cancellationToken)
     {
-        var measures = await db.AnthropometricMeasurements.AsNoTracking()
-            .Where(x => x.PatientId == patient.Id && !x.IsArchived)
-            .OrderBy(x => x.MeasuredAtUtc)
-            .Select(x => new ClinicalMeasurementPdfRow(x.MeasuredAtUtc, x.WeightKg, x.HeightCm, x.WaistCm, x.BodyFatPercent))
-            .ToListAsync(cancellationToken);
-        var assessment = await db.NutritionAssessments.AsNoTracking()
-            .Where(x => x.PatientId == patient.Id && !x.IsArchived)
-            .OrderByDescending(x => x.RecordedAtUtc)
-            .Select(x => new ClinicalAssessmentPdfRow(x.DailyIntake, x.Intolerances, x.Allergies,
-                x.SleepHours, x.ExerciseType, x.ExerciseMinutesPerWeek, x.HasConstipation, x.BristolStoolType, x.ClinicalNotes))
-            .FirstOrDefaultAsync(cancellationToken);
-        var followUps = await db.WeeklyFollowUps.AsNoTracking()
-            .Where(x => x.PatientId == patient.Id && !x.IsArchived)
-            .OrderByDescending(x => x.FollowUpDate).Take(8)
-            .Select(x => new ClinicalFollowUpPdfRow(x.FollowUpDate, x.WeightKg, x.AverageSleepHours,
-                x.ExerciseMinutes, x.ExerciseType, x.PlanAdherencePercent, x.BristolStoolType, x.Symptoms))
-            .ToListAsync(cancellationToken);
-        var generatedAt = DateTime.UtcNow;
-        var bytes = pdfService.Create(new ClinicalReportPdfData(
-            $"{patient.FirstName} {patient.LastName}", patient.DocumentNumber, patient.Goal,
-            generatedAt, measures, assessment, followUps));
+        var professionalName = await db.ApplicationUsers.AsNoTracking()
+            .Where(x => x.Id == patient.AssignedNutritionistUserId)
+            .Select(x => x.FullName)
+            .SingleOrDefaultAsync(cancellationToken);
+        var data = await reportData.BuildAsync(patient, professionalName ?? "NutriVida", menuPlanId,
+            ClinicalReportAudience.Patient, cancellationToken);
+        var generatedAt = data.GeneratedAtUtc;
+        var bytes = pdfService.Create(data);
         var safeName = string.Join('-', new[] { patient.FirstName, patient.LastName }
             .SelectMany(value => value.Split(' ', StringSplitOptions.RemoveEmptyEntries))).ToLowerInvariant();
         return new ClinicalPdfDocument(
@@ -277,4 +388,7 @@ public sealed record SendMessageRequest(
     Guid? MenuPlanId,
     [EnumDataType(typeof(MessageChannel))] MessageChannel Channel,
     [Required, MinLength(3), MaxLength(160)] string Subject,
+    [Required, MinLength(10), MaxLength(2000)] string Body);
+
+public sealed record SendPreparedEmailRequest(
     [Required, MinLength(10), MaxLength(2000)] string Body);

@@ -192,6 +192,8 @@ public sealed class UsersController(NutriVidaDbContext db) : ControllerBase
             user.PasswordHash = credentials.Hash;
             user.PasswordSalt = credentials.Salt;
             user.MustChangePassword = true;
+            user.FailedLoginAttempts = 0;
+            user.LockedUntilUtc = null;
         }
 
         await db.SaveChangesAsync(cancellationToken);

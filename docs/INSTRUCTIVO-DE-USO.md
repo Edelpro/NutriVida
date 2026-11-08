@@ -2,6 +2,17 @@
 
 Esta guía explica cómo iniciar y usar la aplicación local. Para practicar, utiliza únicamente los datos ficticios de `GUIA-DE-REGISTRO.md`.
 
+## Aprobar antes de entregar al paciente
+
+- **Diagnóstico PES:** en Evaluaciones, pulsa **Aprobar diagnóstico**.
+- **Plan de menú:** en Planes guardados, pulsa **Aprobar**. Si editas un plan aprobado, vuelve a borrador.
+- El paciente solo recibe lo aprobado, sin notas clínicas, antecedentes, medicación ni laboratorios. El PDF de **Reportes** es la versión completa para el profesional.
+
+## Contraseñas
+
+- Cualquier persona puede cambiar la suya en **Cambiar contraseña**, en el menú lateral.
+- Si alguien la olvida, Administración le asigna una temporal en **Usuarios y roles**. Tras 5 intentos fallidos la cuenta se bloquea 15 minutos.
+
 ## 1. Herramientas necesarias
 
 - Visual Studio con la carga de trabajo **ASP.NET y desarrollo web**.
@@ -96,7 +107,11 @@ Crea la cita con fecha, hora, duración y motivo. Esto alimenta la agenda; no re
 
 ### Evaluación
 
-Registra ingesta, horarios, alergias, intolerancias, sueño, ejercicio, estreñimiento, frecuencia y Bristol. Después añade antropometría y el diagnóstico PES revisado por la profesional. Bristol solo acepta valores de 1 a 7.
+Registra ingesta, horarios, alergias, intolerancias, sueño, ejercicio, estreñimiento, frecuencia y Bristol. Completa el diagnóstico PES revisado por la profesional. Bristol solo acepta valores de 1 a 7.
+
+### Antropometría
+
+Selecciona el paciente activo y pulsa **Nueva medición**. Registra fecha, peso, estatura y, cuando se hayan tomado, cintura, cadera y grasa corporal. Cada captura se conserva en el historial; **Editar** corrige el registro seleccionado sin borrar las demás fechas. Los indicadores de IMC y cintura/cadera son referencias matemáticas y requieren interpretación profesional.
 
 ### Cálculo energético
 
@@ -116,11 +131,11 @@ Registra semana, peso, adherencia, ejercicio, sueño, Bristol, síntomas y nota 
 
 ### Reportes
 
-Revisa el expediente y pulsa **Descargar PDF clínico**. El PDF se genera en la API y la acción queda registrada en Auditoría.
+Revisa el expediente y pulsa **Descargar PDF clínico**. El informe reúne identificación, objetivo, antropometría, evaluación integral, diagnóstico PES, cálculo energético, el último plan de alimentación con sus porciones y los seguimientos recientes. El PDF se genera en la API y la acción queda registrada en Auditoría.
 
 ### Mensajería
 
-Selecciona paciente, plan, canal, asunto y mensaje. El consentimiento del canal es obligatorio. **Preparar envío** registra un borrador y genera el PDF. Con WhatsApp Cloud configurado, revisa el destino enmascarado, marca la confirmación y pulsa **Enviar PDF por WhatsApp**; NutriVida carga el archivo a Meta y registra el identificador devuelto. Sin proveedor configurado, conserva la alternativa `mailto:` o `wa.me` con enlace temporal. Consulta `docs/WHATSAPP-CLOUD.md` para activar el proveedor y publicar el webhook HTTPS.
+Selecciona paciente, plan, canal, asunto y mensaje. El consentimiento del canal es obligatorio. Si aparece **Consentimiento pendiente**, verifica el destino, marca la confirmación solamente después de recibir la autorización real del paciente y pulsa **Registrar autorización**. El borrador permanece en la pantalla y ya puedes usar **Preparar envío**. Esta acción registra el borrador y genera el PDF del plan elegido. Con SMTP o WhatsApp Cloud configurados, revisa el destino enmascarado, marca la confirmación y pulsa **Enviar PDF por correo** o **Enviar PDF por WhatsApp**. Sin proveedor configurado, se conserva la alternativa `mailto:` o `wa.me` con enlace temporal. Consulta `docs/CORREO-SMTP.md` y `docs/WHATSAPP-CLOUD.md` para activar cada proveedor sin publicar secretos.
 
 ### Usuarios, roles y auditoría
 

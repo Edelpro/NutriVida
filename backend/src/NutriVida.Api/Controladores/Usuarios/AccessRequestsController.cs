@@ -36,22 +36,14 @@ public sealed class AccessRequestsController(NutriVidaDbContext db) : Controller
                 detail = "No existe una cuenta administradora activa para revisar la solicitud."
             });
 
-        if (await db.ApplicationUsers.AnyAsync(x => x.Email == email && !x.IsArchived, cancellationToken))
-            return Conflict(new
-            {
-                title = "Correo ya registrado",
-                detail = "Ya existe una cuenta con ese correo. Usa la opción Ingresar."
-            });
-
-        if (await db.AccessRequests.AnyAsync(
+        // Misma respuesta en todos los casos: este formulario es público y no debe revelar qué correos existen.
+        var alreadyKnown = await db.ApplicationUsers.AnyAsync(x => x.Email == email && !x.IsArchived, cancellationToken)
+            || await db.AccessRequests.AnyAsync(
                 x => x.ClinicId == clinicId.Value && x.Email == email
                     && x.Status == AccessRequestStatus.Pending && !x.IsArchived,
-                cancellationToken))
-            return Conflict(new
-            {
-                title = "Solicitud pendiente",
-                detail = "La administración ya recibió una solicitud con ese correo."
-            });
+                cancellationToken);
+        if (alreadyKnown)
+            return Accepted(new { fullName = request.FullName.Trim(), email, role = NutritionistRole, status = "Pending" });
 
         var accessRequest = new AccessRequest
         {

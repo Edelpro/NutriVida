@@ -91,16 +91,41 @@ public sealed class QuickTemplatesController(NutriVidaDbContext db) : Controller
                 ["exerciseType"] = 500,
                 ["exerciseSchedule"] = 1000,
                 ["bowelFrequency"] = 500,
-                ["clinicalNotes"] = 4000
+                ["clinicalNotes"] = 4000,
+                ["medicalHistory"] = 2000,
+                ["familyHistory"] = 2000,
+                ["medications"] = 1000,
+                ["supplements"] = 1000,
+                ["labResults"] = 2000,
+                ["reproductiveStatus"] = 60,
+                ["sleepHours"] = 10,
+                ["exerciseMinutesPerWeek"] = 10,
+                ["hasConstipation"] = 10,
+                ["bristolStoolType"] = 10,
+                ["problemCode"] = 80,
+                ["problemStatement"] = 1000,
+                ["etiology"] = 2000,
+                ["signsAndSymptoms"] = 2000
             },
             [QuickTemplateScope.FollowUp] = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase)
             {
-                ["professionalNotes"] = 4000
+                ["professionalNotes"] = 2000,
+                ["symptoms"] = 2000,
+                ["adjustments"] = 2000,
+                ["exerciseType"] = 300,
+                ["exerciseMinutes"] = 10,
+                ["averageSleepHours"] = 10,
+                ["planAdherencePercent"] = 10,
+                ["bristolStoolType"] = 10,
+                ["objectiveStatus"] = 10,
+                ["followUpIntervalDays"] = 10
             },
             [QuickTemplateScope.MenuPlan] = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase)
             {
                 ["planName"] = 180,
-                ["professionalNotes"] = 2000
+                ["professionalNotes"] = 2000,
+                ["energyTargetKcal"] = 10,
+                ["itemsJson"] = 30000
             },
             [QuickTemplateScope.Communication] = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase)
             {

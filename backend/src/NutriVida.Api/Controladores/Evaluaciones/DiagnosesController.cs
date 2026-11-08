@@ -28,16 +28,8 @@ public sealed class DiagnosesController(NutriVidaDbContext db) : ControllerBase
     {
         if (!await OwnsPatient(patientId, cancellationToken))
             return NotFound();
-        if (request.AssessmentId.HasValue)
-        {
-            var ownsAssessment = await db.NutritionAssessments.AsNoTracking().AnyAsync(
-                x => x.Id == request.AssessmentId.Value
-                    && x.PatientId == patientId
-                    && !x.IsArchived,
-                cancellationToken);
-            if (!ownsAssessment)
-                return ValidationProblem("La evaluación seleccionada no pertenece al paciente activo o ya no está disponible.");
-        }
+        if (!await AssessmentBelongsToPatient(request.AssessmentId, patientId, cancellationToken))
+            return ValidationProblem(ForeignAssessmentMessage);
         var diagnosis = new NutritionDiagnosis
         {
             PatientId = patientId,
@@ -63,6 +55,7 @@ public sealed class DiagnosesController(NutriVidaDbContext db) : ControllerBase
         if (diagnosis is null) return NotFound();
         diagnosis.Status = DiagnosisStatus.Approved;
         diagnosis.ApprovedAtUtc = DateTime.UtcNow;
+        diagnosis.ApprovedByName = User.Identity?.Name ?? "Profesional";
         await db.SaveChangesAsync(cancellationToken);
         return Ok(diagnosis);
     }
@@ -75,6 +68,8 @@ public sealed class DiagnosesController(NutriVidaDbContext db) : ControllerBase
         var diagnosis = await db.NutritionDiagnoses.SingleOrDefaultAsync(
             x => x.Id == id && x.PatientId == patientId && !x.IsArchived, cancellationToken);
         if (diagnosis is null) return NotFound();
+        if (!await AssessmentBelongsToPatient(request.AssessmentId, patientId, cancellationToken))
+            return ValidationProblem(ForeignAssessmentMessage);
         diagnosis.AssessmentId = request.AssessmentId;
         diagnosis.ProblemCode = request.ProblemCode.Trim();
         diagnosis.ProblemStatement = request.ProblemStatement.Trim();
@@ -82,6 +77,7 @@ public sealed class DiagnosesController(NutriVidaDbContext db) : ControllerBase
         diagnosis.SignsAndSymptoms = request.SignsAndSymptoms.Trim();
         diagnosis.Status = DiagnosisStatus.Draft;
         diagnosis.ApprovedAtUtc = null;
+        diagnosis.ApprovedByName = string.Empty;
         await db.SaveChangesAsync(cancellationToken);
         return Ok(diagnosis);
     }
@@ -98,6 +94,14 @@ public sealed class DiagnosesController(NutriVidaDbContext db) : ControllerBase
         await db.SaveChangesAsync(cancellationToken);
         return NoContent();
     }
+
+    private const string ForeignAssessmentMessage =
+        "La evaluación seleccionada no pertenece al paciente activo o ya no está disponible.";
+
+    private async Task<bool> AssessmentBelongsToPatient(Guid? assessmentId, Guid patientId, CancellationToken cancellationToken) =>
+        !assessmentId.HasValue || await db.NutritionAssessments.AsNoTracking().AnyAsync(
+            x => x.Id == assessmentId.Value && x.PatientId == patientId && !x.IsArchived,
+            cancellationToken);
 
     private Task<bool> OwnsPatient(Guid patientId, CancellationToken cancellationToken) =>
         db.CanAccessPatientAsync(User, patientId, cancellationToken);

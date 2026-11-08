@@ -2,6 +2,8 @@
 
 Sistema profesional de historia clínica nutricional para Ecuador. Incluye pacientes, agenda, evaluación integral, diagnóstico nutricional PES, antropometría, cálculos energéticos, seguimientos, planificación de menús por porciones, catálogo alimentario versionado, reportes PDF, auditoría y preparación de envíos por correo/WhatsApp.
 
+> **Estado:** prototipo funcional avanzado para demostración técnica y portafolio. El uso clínico en producción requiere completar la validación profesional, legal y operativa indicada en la documentación de entrega.
+
 Empieza por el [instructivo de uso](docs/INSTRUCTIVO-DE-USO.md) y continúa con la [guía de registro módulo por módulo](docs/GUIA-DE-REGISTRO.md).
 
 ## Vista previa
@@ -123,10 +125,10 @@ GitHub Actions ejecuta automáticamente compilación y pruebas en cada `push` y 
 
 Los pacientes y alimentos incluidos son demostrativos. Ningún valor `EcuadorDemo` debe utilizarse para atención real. El cliente debe proporcionar una tabla ecuatoriana autorizada y, para SMAE, un archivo obtenido con su licencia. El formato está definido en `docs/DATA-IMPORT.md`.
 
-Correo y WhatsApp validan consentimiento, enmascaran el destino en el historial, registran la preparación y abren `mailto:` o `wa.me` para que el profesional confirme el envío. Para automatizar envíos hay que elegir un proveedor aprobado, colocar credenciales fuera del repositorio y aprobar plantillas/políticas de privacidad.
+Correo y WhatsApp validan consentimiento, enmascaran el destino, generan el PDF y exigen confirmación humana antes de enviarlo. El backend admite envío automático por SMTP y WhatsApp Business Cloud; si un proveedor no está configurado mantiene la alternativa `mailto:` o `wa.me`. Las credenciales se guardan fuera del repositorio. Consulta [`docs/CORREO-SMTP.md`](docs/CORREO-SMTP.md) y [`docs/WHATSAPP-CLOUD.md`](docs/WHATSAPP-CLOUD.md).
 
-Antes de producción se requiere revisión clínica de fórmulas, terminología y flujos; revisión jurídica de LOPDP y retención; proveedor de identidad JWT; respaldo; monitoreo; y pruebas con datos autorizados. El código ya exige HTTPS/HSTS, orígenes CORS reales y una clave JWT no demostrativa cuando `ASPNETCORE_ENVIRONMENT=Production`; usa `appsettings.Production.json.example` como guía y secretos mediante variables de entorno.
+Antes de atender pacientes reales se requiere revisión clínica de fórmulas, terminología y flujos; revisión jurídica de LOPDP y retención; respaldo; monitoreo; y pruebas con datos autorizados. La lista completa está en [`docs/ENTREGA-AL-CLIENTE.md`](docs/ENTREGA-AL-CLIENTE.md) y la instalación en [`docs/DESPLIEGUE.md`](docs/DESPLIEGUE.md). El código ya exige HTTPS/HSTS, orígenes CORS reales y una clave JWT no demostrativa cuando `ASPNETCORE_ENVIRONMENT=Production`; usa `appsettings.Production.json.example` como guía y secretos mediante variables de entorno.
 
 ## Alcance de la publicación
 
-Este repositorio es apto para demostración técnica y portafolio. No constituye por sí solo un sistema autorizado para tomar decisiones clínicas ni un despliegue productivo. Consulta [`docs/SECURITY.md`](docs/SECURITY.md) y [`docs/qa/VERIFICATION.md`](docs/qa/VERIFICATION.md) antes de alojarlo con datos reales.
+La aplicación apoya el criterio del profesional y no toma decisiones clínicas. Su uso con pacientes reales depende de completar los puntos de [`docs/ENTREGA-AL-CLIENTE.md`](docs/ENTREGA-AL-CLIENTE.md). Consulta [`docs/SECURITY.md`](docs/SECURITY.md) y [`docs/qa/VERIFICATION.md`](docs/qa/VERIFICATION.md) antes de alojarlo con datos reales.

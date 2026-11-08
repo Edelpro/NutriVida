@@ -51,13 +51,18 @@ export interface CreatePatientRequest {
 }
 
 export interface UpdatePatientRequest {
+  documentNumber: string;
   firstName: string;
   lastName: string;
+  dateOfBirth: string;
+  sexAtBirth: number;
   email: string;
   phone: string;
   occupation: string;
   goal: string;
   status: number;
   rowVersion: string;
+  emailConsent: boolean;
+  whatsAppConsent: boolean;
   assignedNutritionistUserId: string | null;
 }

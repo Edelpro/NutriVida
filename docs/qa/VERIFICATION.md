@@ -1,18 +1,36 @@
 # Evidencia de verificación
 
-Fecha: 2026-09-26. Entorno: Windows, Angular 22, ASP.NET Core 10 y SQL Server (`MSSQLSERVER`).
+Última verificación: 2026-11-03. Entorno: Windows, Angular 22.2, ASP.NET Core 10 y SQL Server (`MSSQLSERVER`). Las secciones posteriores conservan evidencia de revisiones anteriores (2026-09).
 
 ## Resultado automatizado
 
 | Comprobación | Resultado |
 |---|---|
-| `dotnet test backend/NutriVida.sln` | Correcto: 8 unitarias + 38 integraciones |
-| `npm --prefix frontend test -- --watch=false` | Correcto: 12 pruebas |
-| `npm --prefix frontend run build` | Correcto: compilación de producción |
-| auditoría UI premium estricta | 0 hallazgos accionables; 54 falsos positivos de sintaxis Angular revisados en `PREMIUM-AUDIT-REVIEW.md` |
-| `designmd lint DESIGN.md` | Correcto |
+| `dotnet test backend/NutriVida.sln` | Correcto: 8 unitarias + 90 de integración |
+| `npm --prefix frontend test -- --watch=false` | Correcto: 42 pruebas |
+| `npm --prefix frontend run build` | Correcto |
 | NuGet vulnerable (incluye transitivas) | 0 paquetes vulnerables |
-| `npm audit --omit=dev` | 0 vulnerabilidades |
+| `npm audit` | 0 vulnerabilidades |
+| `scripts/verificar-flujo-completo.ps1` | PASS con SQL Server real |
+| API en modo `Production` sobre base vacía | Migra, crea administrador con cambio obligatorio, sin datos demo, Swagger oculto, encabezados de seguridad presentes |
+
+Las pruebas automáticas no usan SQL Server: los recorridos contra la base se validan con el script de flujo completo y pruebas manuales.
+
+### Comprobado manualmente contra SQL Server (2026-11-02)
+
+- Horas de citas correctas y sin desplazamiento al editar; agenda por día de Ecuador.
+- Primer ingreso, revocación de sesión al desactivar o cambiar contraseña, bloqueo tras 5 intentos y desbloqueo por Administración.
+- Importación CSV: rechazo de coma decimal y valores fuera de rango.
+- Enlace del PDF: bloqueo al retirar el consentimiento y registro de cada descarga.
+- PDF para el paciente sin notas ni plan en borrador; PDF profesional completo.
+- Aprobación de planes y diagnósticos; un plan editado vuelve a borrador; no se comparte un plan sin aprobar.
+- Edición de planes y platos, ficha del paciente, selector con más de 50 pacientes, archivar y restaurar.
+
+### No comprobado
+
+- Envío real por SMTP y WhatsApp Cloud (requiere credenciales; cubierto solo con pruebas simuladas).
+- Safari/iOS y dispositivos físicos.
+- Carga con muchos datos y despliegue en un servidor real con HTTPS.
 
 ## Flujo funcional API y SQL Server
 

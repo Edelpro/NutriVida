@@ -1,7 +1,7 @@
 import { HttpClient } from '@angular/common/http';
 import { Injectable, computed, inject, signal } from '@angular/core';
 import { Router } from '@angular/router';
-import { Observable, catchError, tap, throwError } from 'rxjs';
+import { Observable, catchError, map, tap, throwError } from 'rxjs';
 import { API_BASE_URL } from '../configuracion/api.tokens';
 import { apiErrorMessage } from '../http/api-error';
 import { AuthUser, LoginResponse, UserRole } from './auth.models';
@@ -25,13 +25,7 @@ export class AuthService {
 
   login(email: string, password: string): Observable<LoginResponse> {
     return this.http.post<LoginResponse>(`${this.baseUrl}/auth/login`, { email, password }).pipe(
-      tap((response) => {
-        localStorage.setItem(this.tokenKey, response.accessToken);
-        localStorage.setItem(this.userKey, JSON.stringify(response.user));
-        localStorage.setItem(this.expiryKey, response.expiresAtUtc);
-        this.user.set(response.user);
-        this.scheduleExpiry();
-      }),
+      tap((response) => this.storeSession(response)),
       catchError((error) => throwError(() => new Error(apiErrorMessage(error)))),
     );
   }
@@ -44,15 +38,13 @@ export class AuthService {
 
   changePassword(currentPassword: string, newPassword: string): Observable<void> {
     return this.http
-      .post<void>(`${this.baseUrl}/auth/change-password`, { currentPassword, newPassword })
+      .post<LoginResponse>(`${this.baseUrl}/auth/change-password`, {
+        currentPassword,
+        newPassword,
+      })
       .pipe(
-        tap(() => {
-          const current = this.user();
-          if (!current) return;
-          const updated = { ...current, mustChangePassword: false };
-          localStorage.setItem(this.userKey, JSON.stringify(updated));
-          this.user.set(updated);
-        }),
+        tap((response) => this.storeSession(response)),
+        map(() => undefined),
         catchError((error) => throwError(() => new Error(apiErrorMessage(error)))),
       );
   }
@@ -62,6 +54,14 @@ export class AuthService {
     this.clearStoredSession();
     this.user.set(null);
     void this.router.navigateByUrl('/login');
+  }
+
+  private storeSession(response: LoginResponse): void {
+    localStorage.setItem(this.tokenKey, response.accessToken);
+    localStorage.setItem(this.userKey, JSON.stringify(response.user));
+    localStorage.setItem(this.expiryKey, response.expiresAtUtc);
+    this.user.set(response.user);
+    this.scheduleExpiry();
   }
 
   private clearStoredSession(): void {

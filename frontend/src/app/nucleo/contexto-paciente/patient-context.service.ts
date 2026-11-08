@@ -1,7 +1,7 @@
 import { HttpClient } from '@angular/common/http';
 import { DestroyRef, Injectable, computed, inject, signal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
-import { Subject, catchError, finalize, of, switchMap, tap, throwError } from 'rxjs';
+import { EMPTY, Observable, Subject, catchError, expand, finalize, map, of, reduce, switchMap, tap, throwError } from 'rxjs';
 import { API_BASE_URL } from '../configuracion/api.tokens';
 import { apiErrorMessage } from '../http/api-error';
 
@@ -25,6 +25,12 @@ export interface PatientContextDetails extends PatientContextItem {
   emailConsent: boolean;
   whatsAppConsent: boolean;
   rowVersion: string;
+}
+
+interface PatientPage {
+  items: PatientContextItem[];
+  page: number;
+  totalPages: number;
 }
 
 @Injectable({ providedIn: 'root' })
@@ -76,11 +82,11 @@ export class PatientContextService {
     if (this.loading() || (this.loaded && !force)) return;
     this.loading.set(true);
     this.error.set('');
-    this.http
-      .get<{ items: PatientContextItem[] }>(`${this.baseUrl}/patients`, {
-        params: { page: 1, pageSize: 50 },
-      })
+    this.fetchPage(1)
       .pipe(
+        expand((result) => (result.page < result.totalPages ? this.fetchPage(result.page + 1) : EMPTY)),
+        reduce((all, result) => [...all, ...result.items], [] as PatientContextItem[]),
+        map((items) => ({ items })),
         catchError((error) => {
           this.error.set(apiErrorMessage(error));
           return throwError(() => error);
@@ -97,6 +103,12 @@ export class PatientContextService {
         },
         error: () => this.patients.set([]),
       });
+  }
+
+  private fetchPage(page: number): Observable<PatientPage> {
+    return this.http.get<PatientPage>(`${this.baseUrl}/patients`, {
+      params: { page, pageSize: 50 },
+    });
   }
 
   select(patientId: string): void {

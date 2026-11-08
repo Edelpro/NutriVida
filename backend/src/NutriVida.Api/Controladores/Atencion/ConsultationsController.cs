@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using NutriVida.Domain.Consultations;
 using NutriVida.Api.Security;
+using NutriVida.Api.Services.Time;
 using NutriVida.Infrastructure.Persistence;
 
 namespace NutriVida.Api.Controllers.Consultations;
@@ -16,8 +17,8 @@ public sealed class ConsultationsController(NutriVidaDbContext db) : ControllerB
     public async Task<IActionResult> List([FromQuery] DateOnly date, CancellationToken cancellationToken)
     {
         if (!User.TryGetClinicId(out var clinicId)) return Forbid();
-        var start = date.ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc);
-        var end = start.AddDays(1);
+        var start = ClinicClock.StartOfDayUtc(date);
+        var end = ClinicClock.StartOfDayUtc(date.AddDays(1));
         var accessiblePatientIds = db.AccessiblePatients(User).Select(x => x.Id);
         var rows = await (from consultation in db.Consultations.AsNoTracking()
                           join patient in db.Patients.AsNoTracking() on consultation.PatientId equals patient.Id
@@ -32,8 +33,30 @@ public sealed class ConsultationsController(NutriVidaDbContext db) : ControllerB
                               consultation.StartsAtUtc,
                               consultation.DurationMinutes,
                               consultation.Reason,
+                              consultation.Notes,
                               status = consultation.Status.ToString()
                           })
+            .ToListAsync(cancellationToken);
+        return Ok(rows);
+    }
+
+    [HttpGet("by-patient/{patientId:guid}")]
+    public async Task<IActionResult> ListByPatient(Guid patientId, CancellationToken cancellationToken)
+    {
+        if (!await db.CanAccessPatientAsync(User, patientId, cancellationToken)) return NotFound();
+        var rows = await db.Consultations.AsNoTracking()
+            .Where(x => x.PatientId == patientId && !x.IsArchived)
+            .OrderByDescending(x => x.StartsAtUtc)
+            .Select(x => new
+            {
+                x.Id,
+                x.PatientId,
+                x.StartsAtUtc,
+                x.DurationMinutes,
+                x.Reason,
+                x.Notes,
+                status = x.Status.ToString()
+            })
             .ToListAsync(cancellationToken);
         return Ok(rows);
     }
@@ -49,6 +72,10 @@ public sealed class ConsultationsController(NutriVidaDbContext db) : ControllerB
             .SingleOrDefaultAsync(x => x.Id == request.PatientId, cancellationToken);
         if (patient is null)
             return NotFound(new { title = "Paciente no encontrado", detail = "Actualiza la lista de pacientes e inténtalo nuevamente." });
+        if (!IsPlausibleDate(request.StartsAtUtc))
+            return ValidationProblem("La fecha de la atención debe estar entre hace un año y dentro de dos años.");
+        if (await HasScheduleConflict(request.PatientId, request.StartsAtUtc, request.DurationMinutes, null, cancellationToken))
+            return ScheduleConflict();
 
         var consultation = new Consultation
         {
@@ -84,6 +111,15 @@ public sealed class ConsultationsController(NutriVidaDbContext db) : ControllerB
                 && accessiblePatientIds.Contains(x.PatientId),
             cancellationToken);
         if (consultation is null) return NotFound();
+        var requestedStart = AsUtc(request.StartsAtUtc);
+        var scheduleChanged = requestedStart != consultation.StartsAtUtc
+            || request.DurationMinutes != consultation.DurationMinutes
+            || consultation.Status == ConsultationStatus.Cancelled;
+        if (requestedStart != consultation.StartsAtUtc && !IsPlausibleDate(requestedStart))
+            return ValidationProblem("La fecha de la atención debe estar entre hace un año y dentro de dos años.");
+        if (scheduleChanged && request.Status != ConsultationStatus.Cancelled
+            && await HasScheduleConflict(consultation.PatientId, requestedStart, request.DurationMinutes, consultation.Id, cancellationToken))
+            return ScheduleConflict();
         consultation.StartsAtUtc = request.StartsAtUtc;
         consultation.DurationMinutes = request.DurationMinutes;
         consultation.Reason = request.Reason.Trim();
@@ -117,6 +153,45 @@ public sealed class ConsultationsController(NutriVidaDbContext db) : ControllerB
         await db.SaveChangesAsync(cancellationToken);
         return NoContent();
     }
+
+    private static DateTime AsUtc(DateTime value) => value.Kind == DateTimeKind.Local
+        ? value.ToUniversalTime()
+        : DateTime.SpecifyKind(value, DateTimeKind.Utc);
+
+    private static bool IsPlausibleDate(DateTime startsAt)
+    {
+        var start = AsUtc(startsAt);
+        return start >= DateTime.UtcNow.AddYears(-1) && start <= DateTime.UtcNow.AddYears(2);
+    }
+
+    /// <summary>Un profesional no puede atender a dos pacientes a la vez, ni un paciente tener dos citas.</summary>
+    private async Task<bool> HasScheduleConflict(Guid patientId, DateTime startsAt, int durationMinutes,
+        Guid? ignoredConsultationId, CancellationToken cancellationToken)
+    {
+        var start = AsUtc(startsAt);
+        var end = start.AddMinutes(durationMinutes);
+        var nutritionistId = await db.Patients.AsNoTracking()
+            .Where(x => x.Id == patientId)
+            .Select(x => x.AssignedNutritionistUserId)
+            .SingleOrDefaultAsync(cancellationToken);
+        return await (from consultation in db.Consultations.AsNoTracking()
+                      join patient in db.Patients.AsNoTracking() on consultation.PatientId equals patient.Id
+                      where !consultation.IsArchived && !patient.IsArchived
+                          && consultation.Status != ConsultationStatus.Cancelled
+                          && consultation.Id != ignoredConsultationId
+                          && (patient.Id == patientId
+                              || (nutritionistId != null && patient.AssignedNutritionistUserId == nutritionistId))
+                          && consultation.StartsAtUtc < end
+                          && consultation.StartsAtUtc.AddMinutes(consultation.DurationMinutes) > start
+                      select consultation.Id)
+            .AnyAsync(cancellationToken);
+    }
+
+    private ConflictObjectResult ScheduleConflict() => Conflict(new
+    {
+        title = "Horario ocupado",
+        detail = "Ya existe otra atención en ese horario para este profesional o paciente. Elige otra hora."
+    });
 }
 
 public sealed record CreateConsultationRequest(

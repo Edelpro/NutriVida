@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using NutriVida.Domain.Assessments;
 using NutriVida.Domain.Auditing;
 using NutriVida.Domain.Common;
@@ -10,6 +11,7 @@ using NutriVida.Domain.FoodCatalog;
 using NutriVida.Domain.Identity;
 using NutriVida.Domain.MenuPlanning;
 using NutriVida.Domain.Patients;
+using NutriVida.Domain.Settings;
 using NutriVida.Domain.Templates;
 
 namespace NutriVida.Infrastructure.Persistence;
@@ -34,6 +36,18 @@ public sealed class NutriVidaDbContext(DbContextOptions<NutriVidaDbContext> opti
     public DbSet<QuickTemplate> QuickTemplates => Set<QuickTemplate>();
     public DbSet<AuditEvent> AuditEvents => Set<AuditEvent>();
     public DbSet<FoodCatalogImport> FoodCatalogImports => Set<FoodCatalogImport>();
+    public DbSet<ClinicSettings> ClinicSettings => Set<ClinicSettings>();
+
+    /// <summary>
+    /// SQL Server no conserva el tipo UTC de un datetime2. Sin esto la API devuelve las fechas
+    /// sin "Z" y el navegador las interpreta como hora local.
+    /// </summary>
+    protected override void ConfigureConventions(ModelConfigurationBuilder configurationBuilder) =>
+        configurationBuilder.Properties<DateTime>().HaveConversion<UtcDateTimeConverter>();
+
+    private sealed class UtcDateTimeConverter() : ValueConverter<DateTime, DateTime>(
+        value => value.Kind == DateTimeKind.Local ? value.ToUniversalTime() : value,
+        value => DateTime.SpecifyKind(value, DateTimeKind.Utc));
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -62,6 +76,14 @@ public sealed class NutriVidaDbContext(DbContextOptions<NutriVidaDbContext> opti
             entity.Property(x => x.Email).HasMaxLength(180);
             entity.Property(x => x.Phone).HasMaxLength(30);
             entity.Property(x => x.Goal).HasMaxLength(600);
+        });
+
+        modelBuilder.Entity<ClinicSettings>(entity =>
+        {
+            entity.HasIndex(x => x.ClinicId).IsUnique();
+            entity.Property(x => x.PracticeName).HasMaxLength(160);
+            entity.Property(x => x.Address).HasMaxLength(300);
+            entity.Property(x => x.DefaultEtaPercent).HasPrecision(4, 3);
         });
 
         modelBuilder.Entity<ApplicationUser>(entity =>
@@ -106,7 +128,34 @@ public sealed class NutriVidaDbContext(DbContextOptions<NutriVidaDbContext> opti
             entity.Property(x => x.WeightKg).HasPrecision(6, 2);
             entity.Property(x => x.HeightCm).HasPrecision(6, 2);
             entity.Property(x => x.WaistCm).HasPrecision(6, 2);
+            entity.Property(x => x.HipCm).HasPrecision(6, 2);
             entity.Property(x => x.BodyFatPercent).HasPrecision(5, 2);
+            entity.Property(x => x.SittingHeightCm).HasPrecision(6, 2);
+            entity.Property(x => x.ArmSpanCm).HasPrecision(6, 2);
+            entity.Property(x => x.TricepsSkinfoldMm).HasPrecision(6, 2);
+            entity.Property(x => x.SubscapularSkinfoldMm).HasPrecision(6, 2);
+            entity.Property(x => x.BicepsSkinfoldMm).HasPrecision(6, 2);
+            entity.Property(x => x.IliacCrestSkinfoldMm).HasPrecision(6, 2);
+            entity.Property(x => x.SupraspinaleSkinfoldMm).HasPrecision(6, 2);
+            entity.Property(x => x.AbdominalSkinfoldMm).HasPrecision(6, 2);
+            entity.Property(x => x.FrontThighSkinfoldMm).HasPrecision(6, 2);
+            entity.Property(x => x.MedialCalfSkinfoldMm).HasPrecision(6, 2);
+            entity.Property(x => x.ArmRelaxedCm).HasPrecision(6, 2);
+            entity.Property(x => x.ArmFlexedCm).HasPrecision(6, 2);
+            entity.Property(x => x.ForearmCm).HasPrecision(6, 2);
+            entity.Property(x => x.ChestCm).HasPrecision(6, 2);
+            entity.Property(x => x.MidThighCm).HasPrecision(6, 2);
+            entity.Property(x => x.CalfCm).HasPrecision(6, 2);
+            entity.Property(x => x.NeckCm).HasPrecision(6, 2);
+            entity.Property(x => x.HeadCm).HasPrecision(6, 2);
+            entity.Property(x => x.HumerusBreadthCm).HasPrecision(6, 2);
+            entity.Property(x => x.WristBreadthCm).HasPrecision(6, 2);
+            entity.Property(x => x.FemurBreadthCm).HasPrecision(6, 2);
+            entity.Property(x => x.UsualWeightKg).HasPrecision(6, 2);
+            entity.Property(x => x.KneeHeightCm).HasPrecision(6, 2);
+            entity.Property(x => x.GripStrengthKg).HasPrecision(6, 2);
+            entity.Property(x => x.EdemaGrade).HasMaxLength(40);
+            entity.Property(x => x.AscitesGrade).HasMaxLength(40);
         });
 
         modelBuilder.Entity<EnergyCalculation>(entity =>

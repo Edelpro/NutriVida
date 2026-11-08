@@ -32,6 +32,14 @@ export const routes: Routes = [
           ),
       },
       {
+        path: 'pacientes/:id',
+        title: 'Ficha del paciente | NutriVida',
+        loadComponent: () =>
+          import('./modulos/pacientes/paginas/pagina-ficha/patient-file.component').then(
+            (m) => m.PatientFileComponent,
+          ),
+      },
+      {
         path: 'atencion',
         title: 'Atención | NutriVida',
         loadComponent: () =>
@@ -45,6 +53,22 @@ export const routes: Routes = [
         loadComponent: () =>
           import('./modulos/evaluaciones/paginas/pagina-evaluacion/assessment.component').then(
             (m) => m.AssessmentComponent,
+          ),
+      },
+      {
+        path: 'diagnosticos',
+        title: 'Diagnóstico PES | NutriVida',
+        loadComponent: () =>
+          import('./modulos/diagnosticos/paginas/pagina-diagnosticos/diagnoses.component').then(
+            (m) => m.DiagnosesComponent,
+          ),
+      },
+      {
+        path: 'antropometria',
+        title: 'Antropometría | NutriVida',
+        loadComponent: () =>
+          import('./modulos/antropometria/paginas/pagina-antropometria/anthropometry.component').then(
+            (m) => m.AnthropometryComponent,
           ),
       },
       {
@@ -139,6 +163,14 @@ export const routes: Routes = [
           ),
       },
       {
+        path: 'no-encontrada',
+        title: 'Página no encontrada | NutriVida',
+        loadComponent: () =>
+          import('./modulos/autenticacion/paginas/pagina-no-encontrada/not-found.component').then(
+            (m) => m.NotFoundComponent,
+          ),
+      },
+      {
         path: 'sin-acceso',
         title: 'Acceso restringido | NutriVida',
         loadComponent: () =>
@@ -148,5 +180,5 @@ export const routes: Routes = [
       },
     ],
   },
-  { path: '**', redirectTo: 'inicio' },
+  { path: '**', redirectTo: 'no-encontrada' },
 ];

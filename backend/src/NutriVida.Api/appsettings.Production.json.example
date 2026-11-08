@@ -10,10 +10,30 @@
   "Security": {
     "AllowedOrigins": [
       "https://app.tu-dominio.com"
-    ]
+    ],
+    "TrustForwardedHeaders": true
+  },
+  "Database": {
+    "ApplyMigrationsOnStartup": true
+  },
+  "Bootstrap": {
+    "AdminName": "Administración",
+    "AdminEmail": "CONFIGURAR_SOLO_EN_LA_PRIMERA_PUESTA_EN_MARCHA",
+    "AdminPassword": "CONFIGURAR_CON_SECRETO_DEL_ENTORNO_Y_RETIRAR_DESPUES"
   },
   "Messaging": {
-    "Mode": "WhatsAppCloud",
+    "SharedLinkDays": 7,
+    "Mode": "Automatic",
+    "Smtp": {
+      "Enabled": true,
+      "Host": "smtp.proveedor.com",
+      "Port": 587,
+      "SocketSecurity": "StartTls",
+      "Username": "CONFIGURAR_CON_VARIABLE_DE_ENTORNO",
+      "Password": "CONFIGURAR_CON_SECRETO_DEL_ENTORNO",
+      "FromEmail": "consultorio@tu-dominio.com",
+      "FromName": "NutriVida"
+    },
     "WhatsAppCloud": {
       "Enabled": true,
       "GraphApiVersion": "v23.0",

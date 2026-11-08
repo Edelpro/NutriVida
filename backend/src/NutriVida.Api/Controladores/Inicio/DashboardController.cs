@@ -1,10 +1,12 @@
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using NutriVida.Domain.Communications;
+using NutriVida.Domain.Consultations;
 using NutriVida.Domain.MenuPlanning;
 using NutriVida.Domain.Patients;
 using NutriVida.Infrastructure.Persistence;
 using NutriVida.Api.Security;
+using NutriVida.Api.Services.Time;
 
 namespace NutriVida.Api.Controllers.Dashboard;
 
@@ -16,9 +18,11 @@ public sealed class DashboardController(NutriVidaDbContext db) : ControllerBase
     public async Task<IActionResult> Get(CancellationToken cancellationToken)
     {
         if (!User.TryGetClinicId(out var clinicId)) return Forbid();
-        var todayUtc = DateTime.UtcNow.Date;
-        var tomorrowUtc = todayUtc.AddDays(1);
-        var monthStartUtc = new DateTime(todayUtc.Year, todayUtc.Month, 1, 0, 0, 0, DateTimeKind.Utc);
+        var today = ClinicClock.Today();
+        var todayUtc = ClinicClock.StartOfDayUtc(today);
+        var tomorrowUtc = ClinicClock.StartOfDayUtc(today.AddDays(1));
+        var agendaEndUtc = ClinicClock.StartOfDayUtc(today.AddDays(3));
+        var monthStartUtc = ClinicClock.StartOfDayUtc(new DateOnly(today.Year, today.Month, 1));
         var accessiblePatients = db.AccessiblePatients(User);
         var accessiblePatientsIncludingArchived = db.AccessiblePatients(User, includeArchived: true);
 
@@ -32,8 +36,8 @@ public sealed class DashboardController(NutriVidaDbContext db) : ControllerBase
             x => x.CreatedAtUtc >= monthStartUtc, cancellationToken);
         var accessiblePatientIds = accessiblePatients.Select(x => x.Id);
         var consultationsToday = await db.Consultations.CountAsync(x => accessiblePatientIds.Contains(x.PatientId)
-            && !x.IsArchived && x.StartsAtUtc >= todayUtc && x.StartsAtUtc < tomorrowUtc, cancellationToken);
-        var today = DateOnly.FromDateTime(DateTime.Today);
+            && !x.IsArchived && x.Status != ConsultationStatus.Cancelled
+            && x.StartsAtUtc >= todayUtc && x.StartsAtUtc < tomorrowUtc, cancellationToken);
         var pendingFollowUps = await db.WeeklyFollowUps.CountAsync(x => accessiblePatientIds.Contains(x.PatientId)
             && !x.IsArchived && x.NextAppointmentOn.HasValue && x.NextAppointmentOn <= today, cancellationToken);
         var plansToReview = await db.MenuPlans.CountAsync(x => accessiblePatientIds.Contains(x.PatientId) && !x.IsArchived
@@ -44,13 +48,15 @@ public sealed class DashboardController(NutriVidaDbContext db) : ControllerBase
         var appointmentsRaw = await (from c in db.Consultations.AsNoTracking()
                                      join p in db.Patients.AsNoTracking() on c.PatientId equals p.Id
                                      where accessiblePatientIds.Contains(p.Id) && !c.IsArchived
-                                         && c.StartsAtUtc >= todayUtc && c.StartsAtUtc < todayUtc.AddDays(3)
+                                         && (c.Status == ConsultationStatus.Scheduled || c.Status == ConsultationStatus.InProgress)
+                                         && c.StartsAtUtc >= todayUtc && c.StartsAtUtc < agendaEndUtc
                                      orderby c.StartsAtUtc
                                      select new
                                      {
                                          c.Id,
                                          c.PatientId,
                                          c.StartsAtUtc,
+                                         c.DurationMinutes,
                                          c.Reason,
                                          c.Status,
                                          p.FirstName,
@@ -65,6 +71,7 @@ public sealed class DashboardController(NutriVidaDbContext db) : ControllerBase
             x.PatientId,
             patientName = $"{x.FirstName} {x.LastName}",
             x.StartsAtUtc,
+            x.DurationMinutes,
             x.Reason,
             status = x.Status.ToString()
         }).ToList();
@@ -94,7 +101,7 @@ public sealed class DashboardController(NutriVidaDbContext db) : ControllerBase
         {
             x.Id,
             fullName = $"{x.FirstName} {x.LastName}",
-            ageYears = AgeOn(x.DateOfBirth, DateOnly.FromDateTime(DateTime.Today)),
+            ageYears = AgeOn(x.DateOfBirth, today),
             x.Goal,
             status = x.Status.ToString(),
             lastConsultationUtc = recentConsultations
@@ -149,7 +156,7 @@ public sealed class DashboardController(NutriVidaDbContext db) : ControllerBase
                     focus.Id,
                     fullName = $"{focus.FirstName} {focus.LastName}",
                     initials = Initials(focus.FirstName, focus.LastName),
-                    ageYears = AgeOn(focus.DateOfBirth, DateOnly.FromDateTime(DateTime.Today)),
+                    ageYears = AgeOn(focus.DateOfBirth, today),
                     focus.DocumentNumber,
                     focus.Goal,
                     weightKg = latest?.WeightKg,

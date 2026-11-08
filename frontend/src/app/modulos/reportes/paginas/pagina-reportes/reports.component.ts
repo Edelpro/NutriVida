@@ -11,6 +11,7 @@ interface ReportMeasurement {
   weightKg: number;
   heightCm: number;
   waistCm: number | null;
+  hipCm: number | null;
   bodyFatPercent: number | null;
 }
 
@@ -92,6 +93,16 @@ interface ClinicalReport {
             </dd>
           </div>
           <div>
+            <dt>Cadera</dt>
+            <dd>
+              {{
+                latestMeasurement()?.hipCm === null
+                  ? '—'
+                  : (latestMeasurement()?.hipCm | number: '1.1-1') + ' cm'
+              }}
+            </dd>
+          </div>
+          <div>
             <dt>Adherencia</dt>
             <dd>{{ latestFollowUp()?.planAdherencePercent === null || latestFollowUp()?.planAdherencePercent === undefined ? '—' : latestFollowUp()?.planAdherencePercent + '%' }}</dd>
           </div>
@@ -105,19 +116,16 @@ interface ClinicalReport {
               <span><app-icon name="clock" /> Sueño</span
               ><strong>{{ latestFollowUp()?.averageSleepHours ?? '—' }} h</strong
               ><small>promedio diario</small>
-              <div class="progress"><span style="width:72%"></span></div>
             </div>
             <div>
               <span><app-icon name="activity" /> Ejercicio</span
               ><strong>{{ latestFollowUp()?.exerciseMinutes ?? '—' }} min</strong
               ><small>{{ latestFollowUp()?.exerciseType || 'sin registro' }}</small>
-              <div class="progress"><span [style.width.%]="exercisePercent()"></span></div>
             </div>
             <div>
               <span><app-icon name="clipboard" /> Tránsito</span
               ><strong>Bristol {{ latestFollowUp()?.bristolStoolType ?? '—' }}</strong
               ><small>{{ latestFollowUp()?.symptoms || 'sin observaciones' }}</small>
-              <div class="progress"><span [style.width.%]="bristolPercent()"></span></div>
             </div>
           </div>
         </section>
@@ -152,7 +160,6 @@ interface ClinicalReport {
                 <th>Fecha</th>
                 <th>Evento</th>
                 <th>Resultado</th>
-                <th>Responsable</th>
               </tr>
             </thead>
             <tbody>
@@ -161,7 +168,6 @@ interface ClinicalReport {
                   <td>{{ event.date | date: 'dd MMM y' : '' : 'es-EC' }}</td>
                   <td>{{ event.type }}</td>
                   <td>{{ event.result }}</td>
-                  <td>Equipo clínico</td>
                 </tr>
               }
             </tbody>
@@ -228,7 +234,7 @@ interface ClinicalReport {
         top: -1.2rem;
         width: 100%;
         text-align: center;
-        font-size: 0.68rem;
+        font-size: 0.72rem;
       }
       .report-hero dl {
         margin: 0;
@@ -241,7 +247,7 @@ interface ClinicalReport {
       }
       .report-hero dt {
         color: #dcebc6;
-        font-size: 0.7rem;
+        font-size: 0.72rem;
       }
       .report-hero dd {
         margin: 0.25rem 0 0;
@@ -251,6 +257,7 @@ interface ClinicalReport {
         margin: 1rem 0;
         display: grid;
         grid-template-columns: 1fr 1fr;
+        align-items: start;
         gap: 1rem;
       }
       .indicators {
@@ -283,7 +290,7 @@ interface ClinicalReport {
       .indicators small {
         min-height: 2rem;
         color: var(--text-muted);
-        font-size: 0.66rem;
+        font-size: 0.72rem;
       }
       .indicators .progress {
         margin-top: 0.5rem;
@@ -304,7 +311,7 @@ interface ClinicalReport {
         display: flex;
         justify-content: space-between;
         color: var(--text-muted);
-        font-size: 0.68rem;
+        font-size: 0.72rem;
       }
       @media print {
         .page-header .toolbar {
@@ -361,13 +368,12 @@ export class ReportsComponent {
   readonly chartBars = computed(() => {
     const rows = (this.reportData()?.measurements ?? []).slice(-5);
     const weights = rows.map((row) => Number(row.weightKg));
-    const min = Math.min(...weights);
     const max = Math.max(...weights);
-    const range = max - min;
     return rows.map((row) => ({
-      date: row.measuredAtUtc,
+      date: `${row.measuredAtUtc.slice(0, 10)}T00:00:00`,
       value: Number(row.weightKg).toFixed(1),
-      height: range ? 35 + ((Number(row.weightKg) - min) / range) * 55 : 65,
+      // Parte de cero: un eje recortado haría parecer enorme un cambio pequeño.
+      height: (Number(row.weightKg) / max) * 90,
     }));
   });
   readonly timeline = computed(() => {
@@ -376,7 +382,7 @@ export class ReportsComponent {
     return [
       ...report.measurements.map((row) => ({
         key: `measurement-${row.measuredAtUtc}`,
-        date: row.measuredAtUtc,
+        date: `${row.measuredAtUtc.slice(0, 10)}T00:00:00`,
         type: 'Antropometría',
         result: `${Number(row.weightKg).toFixed(1)} kg${row.waistCm ? ` · cintura ${Number(row.waistCm).toFixed(1)} cm` : ''}`,
       })),
@@ -426,12 +432,6 @@ export class ReportsComponent {
     const row = this.latestMeasurement();
     if (!row?.heightCm) return null;
     return Number(row.weightKg) / Math.pow(Number(row.heightCm) / 100, 2);
-  }
-  exercisePercent(): number {
-    return Math.min(100, ((this.latestFollowUp()?.exerciseMinutes ?? 0) / 150) * 100);
-  }
-  bristolPercent(): number {
-    return ((this.latestFollowUp()?.bristolStoolType ?? 0) / 7) * 100;
   }
   chartAriaLabel(): string {
     const values = this.chartBars()

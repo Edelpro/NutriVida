@@ -14,6 +14,13 @@ public static class PasswordHasher
         return (Convert.ToBase64String(hash), Convert.ToBase64String(salt));
     }
 
+    /// <summary>
+    /// Huella de la credencial vigente. La sal cambia con cada contraseña nueva, así que los
+    /// tokens emitidos antes del cambio dejan de coincidir.
+    /// </summary>
+    public static string SessionStamp(string saltBase64) =>
+        Convert.ToHexString(SHA256.HashData(Convert.FromBase64String(saltBase64)))[..16];
+
     public static bool Verify(string password, string hashBase64, string saltBase64)
     {
         var salt = Convert.FromBase64String(saltBase64);

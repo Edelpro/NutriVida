@@ -16,6 +16,25 @@ public static class DatabaseSeeder
     public static readonly Guid DemoClinicId = Guid.Parse("67259895-e69d-4478-b1e0-0b30df36ae40");
     public static readonly Guid DemoPatientId = Guid.Parse("5687f592-0b31-4431-99a1-7d299c185d4d");
 
+    /// <summary>
+    /// Primera puesta en marcha sin datos de demostración: crea la cuenta administradora, que deberá
+    /// cambiar su contraseña al entrar, y las plantillas base. No hace nada si ya existen cuentas.
+    /// </summary>
+    public static async Task BootstrapAdministratorAsync(
+        NutriVidaDbContext db,
+        string fullName,
+        string email,
+        string temporaryPassword,
+        CancellationToken cancellationToken = default)
+    {
+        if (await db.ApplicationUsers.AnyAsync(cancellationToken)) return;
+        var administrator = CreateUser(fullName, email.Trim().ToLowerInvariant(), "ClinicAdmin", temporaryPassword);
+        administrator.MustChangePassword = true;
+        db.ApplicationUsers.Add(administrator);
+        await db.SaveChangesAsync(cancellationToken);
+        await EnsureQuickTemplatesAsync(db, cancellationToken);
+    }
+
     public static async Task InitialiseAsync(
         NutriVidaDbContext db,
         bool resetDemoCredentials = false,
@@ -312,9 +331,88 @@ public static class DatabaseSeeder
                     }));
         }
 
-        if (templates.Count == 0) return;
-        db.QuickTemplates.AddRange(templates);
-        await db.SaveChangesAsync(cancellationToken);
+        if (templates.Count > 0)
+        {
+            db.QuickTemplates.AddRange(templates);
+            await db.SaveChangesAsync(cancellationToken);
+        }
+        await CompleteExampleTemplatesAsync(db, cancellationToken);
+    }
+
+    private static readonly Dictionary<string, Dictionary<string, string>> ExampleTemplateFields = new()
+    {
+        ["Primera consulta"] = new()
+        {
+            ["medicalHistory"] = "Enfermedades actuales:\nCirugías:\nHospitalizaciones:",
+            ["familyHistory"] = "Diabetes:\nHipertensión:\nDislipidemia:\nCáncer:",
+            ["medications"] = "Medicamento y dosis:",
+            ["supplements"] = "Suplemento y frecuencia:",
+            ["labResults"] = "Glucosa:\nPerfil lipídico:\nHemoglobina:\nFecha:",
+            ["sleepQuality"] = "Buena",
+            ["exerciseType"] = "Tipo de actividad e intensidad:",
+            ["exerciseSchedule"] = "Días y horario:",
+            ["bowelFrequency"] = "Veces por día o semana:"
+        },
+        ["Control de peso"] = new()
+        {
+            ["medicalHistory"] = "Historia del peso y condiciones relacionadas:",
+            ["medications"] = "Medicamentos que afectan el peso o el apetito:",
+            ["labResults"] = "Glucosa:\nPerfil lipídico:\nFecha:",
+            ["exerciseType"] = "Tipo de actividad e intensidad:",
+            ["problemCode"] = "NI-1.3",
+            ["problemStatement"] = "Ingesta excesiva de energía",
+            ["etiology"] = "Relacionado con:",
+            ["signsAndSymptoms"] = "Evidenciado por:"
+        },
+        ["Salud digestiva"] = new()
+        {
+            ["medicalHistory"] = "Diagnósticos digestivos:",
+            ["medications"] = "Medicamentos digestivos:",
+            ["bowelFrequency"] = "Veces por día o semana:",
+            ["problemCode"] = "NC-1.4",
+            ["problemStatement"] = "Función gastrointestinal alterada",
+            ["etiology"] = "Relacionado con:",
+            ["signsAndSymptoms"] = "Evidenciado por:"
+        },
+        ["Control habitual"] = new()
+        {
+            ["symptoms"] = "Hambre:\nDigestión:\nEnergía:\nBarreras:",
+            ["adjustments"] = "Porciones:\nHorarios:\nActividad:"
+        },
+        ["Adherencia y barreras"] = new()
+        {
+            ["symptoms"] = "Dificultades referidas:",
+            ["adjustments"] = "Cambios acordados:"
+        },
+        ["Síntomas digestivos"] = new()
+        {
+            ["symptoms"] = "Síntoma, frecuencia y relación con comidas:",
+            ["adjustments"] = "Alimentos a revisar:\nHidratación:"
+        }
+    };
+
+    private static async Task CompleteExampleTemplatesAsync(NutriVidaDbContext db, CancellationToken cancellationToken)
+    {
+        var names = ExampleTemplateFields.Keys.ToArray();
+        var rows = await db.QuickTemplates
+            .Where(x => x.ClinicId == DemoClinicId && !x.IsArchived && names.Contains(x.Name))
+            .ToListAsync(cancellationToken);
+        var changed = false;
+        foreach (var row in rows)
+        {
+            var values = System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, string>>(
+                string.IsNullOrWhiteSpace(row.ValuesJson) ? "{}" : row.ValuesJson) ?? [];
+            foreach (var field in ExampleTemplateFields[row.Name])
+            {
+                if (!values.ContainsKey(field.Key))
+                {
+                    values[field.Key] = field.Value;
+                    changed = true;
+                }
+            }
+            row.ValuesJson = System.Text.Json.JsonSerializer.Serialize(values);
+        }
+        if (changed) await db.SaveChangesAsync(cancellationToken);
     }
 
     private static QuickTemplate DemoTemplate(

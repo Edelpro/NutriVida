@@ -12,6 +12,8 @@ public sealed class MenuPlan : BaseEntity
     public DateOnly EndsOn { get; set; }
     public decimal EnergyTargetKcal { get; set; }
     public MenuPlanStatus Status { get; set; } = MenuPlanStatus.Draft;
+    public DateTime? ApprovedAtUtc { get; set; }
+    public string ApprovedByName { get; set; } = string.Empty;
     public string ProfessionalNotes { get; set; } = string.Empty;
     public List<MenuPlanItem> Items { get; set; } = [];
 }

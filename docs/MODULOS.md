@@ -64,9 +64,12 @@ En Usuarios, `Controladores/Usuarios/UsersController.cs` lista, crea y actualiza
 |---|---|
 | Autenticación | Iniciar sesión, conservar sesión JWT, solicitar acceso sin registro público y forzar el cambio de una contraseña temporal. |
 | Usuarios | Crear cuentas internas, asignar roles, activar/desactivar y restablecer contraseña temporal. |
-| Pacientes | Datos personales, contacto, objetivo, consentimientos y asignación al nutricionista responsable. |
+| Diagnóstico PES | Problema, etiología y signos o síntomas con lista de códigos, aprobación y archivo. También puede registrarse desde la Evaluación. |
+| Configuración | Nombre del consultorio para los PDF, dirección y criterios predeterminados del cálculo energético. |
+| Pacientes | Datos personales, contacto, objetivo, consentimientos y asignación al nutricionista responsable. La ficha reúne en una sola pantalla el avance por etapas, alergias, próxima atención e historia del paciente. |
 | Atención | Agenda y registro de cada consulta. |
 | Evaluaciones | Historia clínica, ingesta, alergias, intolerancias, sueño, ejercicio, tránsito intestinal, Bristol y diagnóstico PES. |
+| Antropometría | Fecha, peso, estatura, cintura, cadera, grasa corporal, observaciones e historial de evolución por paciente. |
 | Cálculo energético | Fórmulas de gasto energético, actividad física y efecto térmico de los alimentos. |
 | Seguimiento y evolución | Control en cualquier fecha, período evaluado opcional, próximo control, peso, adherencia, ejercicio, sueño, síntomas y ajustes. |
 | Planes de menú | Comidas, porciones, equivalentes y totales nutricionales por paciente. |

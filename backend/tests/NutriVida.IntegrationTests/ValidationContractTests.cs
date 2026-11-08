@@ -32,6 +32,15 @@ public sealed class ValidationContractTests
     }
 
     [Fact]
+    public void Patient_AllowsEmptyEmail()
+    {
+        var request = new CreatePatientRequest("PRUEBA-001", "Ana", "Torres", new DateOnly(1990, 1, 1),
+            BiologicalSex.Female, "", "+593990000000", "", "", false, false, null);
+
+        Assert.DoesNotContain(Validate(request), x => x.MemberNames.Contains(nameof(request.Email)));
+    }
+
+    [Fact]
     public void Patient_RejectsUnknownBiologicalSexValue()
     {
         var request = new CreatePatientRequest("PRUEBA-001", "Ana", "Torres", new DateOnly(1990, 1, 1),
@@ -90,6 +99,20 @@ public sealed class ValidationContractTests
             bristolType, "Diaria", "Sin observaciones");
 
         Assert.Contains(Validate(request), x => x.MemberNames.Contains(nameof(request.BristolStoolType)));
+    }
+
+    [Fact]
+    public void Anthropometry_RejectsImpossibleClinicalRanges()
+    {
+        var request = new AnthropometryRequest(DateOnly.FromDateTime(DateTime.Today),
+            10, 300, 10, 300, 90, "Medición inválida");
+
+        var errors = Validate(request);
+        Assert.Contains(errors, x => x.MemberNames.Contains(nameof(request.WeightKg)));
+        Assert.Contains(errors, x => x.MemberNames.Contains(nameof(request.HeightCm)));
+        Assert.Contains(errors, x => x.MemberNames.Contains(nameof(request.WaistCm)));
+        Assert.Contains(errors, x => x.MemberNames.Contains(nameof(request.HipCm)));
+        Assert.Contains(errors, x => x.MemberNames.Contains(nameof(request.BodyFatPercent)));
     }
 
     [Theory]

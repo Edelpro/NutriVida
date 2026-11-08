@@ -8,7 +8,10 @@ export function apiErrorMessage(error: unknown): string {
     return (
       validationMessages[0] ||
       error.error?.detail ||
-      error.error?.title ||
+      // El título automático de un 404 llega en inglés ("Not Found").
+      (error.status === 404
+        ? 'No se encontró. Puede que ya no exista o que no esté asignado a tu cuenta.'
+        : error.error?.title) ||
       (error.status === 0
         ? 'No hay conexión con la API. Comprueba que NutriVida.Api esté ejecutándose.'
         : 'El servidor no pudo completar la solicitud.')

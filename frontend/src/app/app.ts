@@ -32,6 +32,8 @@ export class App {
         { label: 'Pacientes', path: '/pacientes', icon: 'users' },
         { label: 'Atención', path: '/atencion', icon: 'calendar' },
         { label: 'Evaluaciones', path: '/evaluaciones', icon: 'clipboard' },
+        { label: 'Antropometría', path: '/antropometria', icon: 'activity' },
+        { label: 'Diagnóstico PES', path: '/diagnosticos', icon: 'check' },
         { label: 'Cálculo energético', path: '/calculos', icon: 'energy' },
       ],
     },
@@ -41,7 +43,7 @@ export class App {
         { label: '1. Catálogo', path: '/alimentos', icon: 'food' },
         { label: '2. Platos', path: '/platos', icon: 'dish' },
         { label: '3. Menú del paciente', path: '/menus', icon: 'menu' },
-        { label: '4. Seguimiento', path: '/seguimientos', icon: 'activity' },
+        { label: '4. Seguimiento', path: '/seguimientos', icon: 'clock' },
       ],
     },
     {

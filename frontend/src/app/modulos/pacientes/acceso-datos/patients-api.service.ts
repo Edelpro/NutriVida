@@ -16,10 +16,20 @@ export class PatientsApiService {
   private readonly http = inject(HttpClient);
   private readonly baseUrl = inject(API_BASE_URL);
 
-  list(query = '', page = 1): Observable<PagedPatients> {
-    const params = new HttpParams().set('q', query).set('page', page).set('pageSize', 10);
+  list(query = '', page = 1, archived = false): Observable<PagedPatients> {
+    const params = new HttpParams()
+      .set('q', query)
+      .set('page', page)
+      .set('pageSize', 10)
+      .set('archived', archived);
     return this.http
       .get<PagedPatients>(`${this.baseUrl}/patients`, { params })
+      .pipe(catchError((error) => this.fail(error)));
+  }
+
+  restore(id: string): Observable<void> {
+    return this.http
+      .post<void>(`${this.baseUrl}/patients/${id}/restore`, {})
       .pipe(catchError((error) => this.fail(error)));
   }
 

@@ -3,6 +3,8 @@ import { Component, OnInit, inject, signal } from '@angular/core';
 import { FormsModule, NgForm } from '@angular/forms';
 import { ActivatedRoute } from '@angular/router';
 import { ApiService, Food, FoodCatalogImport, SavePersonalizedFood } from '../../../../nucleo/api.service';
+import { scaleFood } from '../../../../nucleo/food-options';
+import { SMAE_EXCHANGE_GROUPS } from '../../modelos/smae-exchange';
 import { IconComponent } from '../../../../compartido/icono/icon.component';
 import { ToastService } from '../../../../compartido/notificaciones/toast.service';
 import { FlujoPlanNutricionalComponent } from '../../../../compartido/flujo-plan-nutricional/flujo-plan-nutricional.component';
@@ -32,25 +34,18 @@ import { AuthService } from '../../../../nucleo/autenticacion/auth.service';
         >
           <app-icon name="download" /> Importar catálogo CSV
         </button>
-      } @else {
-        <span class="badge">Puedes crear alimentos personalizados</span>
       }
       </div>
     </header>
     <app-flujo-plan-nutricional [currentStep]="1" />
-    <div class="notice notice-success workflow-note">
-      <app-icon name="food" /><span
-        ><strong>Aquí está la base de ingredientes.</strong> Busca el catálogo autorizado o crea un
-        alimento personalizado con su porción, nutrientes y referencia. Después ve a Platos para
-        combinar los ingredientes.</span
-      >
-    </div>
-    <div class="notice notice-warning">
+    @if (hasDemoFoods()) {
+      <div class="notice notice-warning">
       <app-icon name="info" /><span
         ><strong>Entorno demostrativo.</strong> Los valores de ejemplo no sustituyen las tablas
         oficiales de Ecuador ni una licencia SMAE. El importador exige fuente y edición.</span
       >
     </div>
+    }
     @if (foodFormOpen()) {
       <section class="surface food-form-panel" aria-labelledby="foodFormTitle">
         <header class="surface-header">
@@ -139,8 +134,8 @@ import { AuthService } from '../../../../nucleo/autenticacion/auth.service';
           <div class="field col-4">
             <label for="importSource">Fuente</label>
             <select id="importSource" [(ngModel)]="importSource">
-              <option [ngValue]="1">Tabla Ecuador autorizada</option>
-              <option [ngValue]="2">SMAE con licencia</option>
+              <option [ngValue]="1">Lista de Ecuador (USFQ) autorizada</option>
+              <option [ngValue]="2">Lista de intercambio SMAE con licencia</option>
             </select>
             <small>La demostración no puede importarse.</small>
           </div>
@@ -218,8 +213,18 @@ import { AuthService } from '../../../../nucleo/autenticacion/auth.service';
             }
           </span>
         </div>
+        <div class="source-filter">
+          <label class="field-label" for="sourceFilter">Lista</label>
+          <select id="sourceFilter" name="sourceFilter" [(ngModel)]="sourceFilter" (ngModelChange)="load()">
+            <option [ngValue]="null">Todas</option>
+            <option [ngValue]="2">SMAE</option>
+            <option [ngValue]="1">Ecuador (USFQ)</option>
+            <option [ngValue]="3">Personalizados</option>
+            <option [ngValue]="0">Demostración</option>
+          </select>
+        </div>
         <button class="button button-secondary" type="button" (click)="load()">Buscar</button
-        ><span class="badge">{{ foods().length }} resultados</span>
+        ><span class="badge">{{ total() }} resultados</span>
       </div>
       @if (loading()) {
         <div class="status-message"><span class="spinner"></span></div>
@@ -244,7 +249,7 @@ import { AuthService } from '../../../../nucleo/autenticacion/auth.service';
               <tr>
                 <th>Alimento</th>
                 <th>Grupo</th>
-                <th>Porción</th>
+                <th>Porción (edita los gramos)</th>
                 <th>Energía</th>
                 <th>Proteína</th>
                 <th>Carbohidrato</th>
@@ -261,14 +266,30 @@ import { AuthService } from '../../../../nucleo/autenticacion/auth.service';
                     <strong>{{ food.name }}</strong>
                   </td>
                   <td>
-                    <span class="badge">{{ food.group }}</span>
+                    <span class="badge">{{ food.exchangeGroup || food.group }}</span>
                   </td>
-                  <td>{{ food.householdMeasure }} · {{ food.portionGrams | number: '1.0-1' }} g</td>
-                  <td class="metric-number">{{ food.energyKcal | number: '1.0-1' }} kcal</td>
-                  <td>{{ food.proteinG | number: '1.0-1' }} g</td>
-                  <td>{{ food.carbohydrateG | number: '1.0-1' }} g</td>
-                  <td>{{ food.fatG | number: '1.0-1' }} g</td>
-                  <td>{{ food.fiberG | number: '1.0-1' }} g</td>
+                  <td class="portion-cell">
+                    <small>{{ food.householdMeasure }} · {{ food.portionGrams | number: '1.0-1' }} g</small>
+                    <span class="portion-input">
+                      <input
+                        type="number"
+                        min="0.1"
+                        step="1"
+                        [name]="'grams-' + food.id"
+                        [attr.aria-label]="'Gramos de ' + food.name"
+                        [ngModel]="gramsFor(food)"
+                        (ngModelChange)="setGrams(food, $event)"
+                      /><span>g</span>
+                    </span>
+                    @if (portionsFor(food) !== 1) {
+                      <small class="equivalents">= {{ portionsFor(food) | number: '1.0-2' }} porciones</small>
+                    }
+                  </td>
+                  <td class="metric-number">{{ scaled(food).energyKcal | number: '1.0-1' }} kcal</td>
+                  <td>{{ scaled(food).proteinG | number: '1.0-1' }} g</td>
+                  <td>{{ scaled(food).carbohydrateG | number: '1.0-1' }} g</td>
+                  <td>{{ scaled(food).fatG | number: '1.0-1' }} g</td>
+                  <td>{{ scaled(food).fiberG | number: '1.0-1' }} g</td>
                   <td>
                     <span class="source"
                       >{{ sourceLabel(food.source)
@@ -279,7 +300,7 @@ import { AuthService } from '../../../../nucleo/autenticacion/auth.service';
                     @if (food.source === 3) {
                       <button class="button button-quiet button-small" type="button" (click)="openEditFood(food)"><app-icon name="edit" /> Editar</button>
                     } @else {
-                      <span class="caption">Edición protegida</span>
+                      <span class="caption">Solo lectura</span>
                     }
                   </td>
                 </tr>
@@ -289,7 +310,40 @@ import { AuthService } from '../../../../nucleo/autenticacion/auth.service';
         </div>
       }
       <div class="pagination">
-        <span>Valores por porción registrada</span><span>Edición y referencia obligatorias</span>
+        <span>Los gramos que cambies aquí solo calculan: no modifican el catálogo · Página {{ page() }} de {{ totalPages() }}</span>
+        <div class="toolbar">
+          <button class="button button-secondary button-small" type="button" [disabled]="page() <= 1 || loading()" (click)="load(page() - 1)">Anterior</button>
+          <button class="button button-secondary button-small" type="button" [disabled]="page() >= totalPages() || loading()" (click)="load(page() + 1)">Siguiente</button>
+        </div>
+      </div>
+    </section>
+    <section class="surface exchange" aria-labelledby="exchangeTitle">
+      <header class="surface-header">
+        <div>
+          <p class="eyebrow">Lista de intercambio SMAE</p>
+          <h2 id="exchangeTitle">Calcular por equivalentes</h2>
+          <p>Promedio por grupo. Confírmalo con tu edición autorizada.</p>
+        </div>
+      </header>
+      <div class="surface-body exchange-grid">
+        <div class="field">
+          <label for="exchangeGroup">Grupo</label>
+          <select id="exchangeGroup" name="exchangeGroup" [(ngModel)]="exchangeName">
+            @for (group of exchangeGroups; track group.name) {
+              <option [value]="group.name">{{ group.name }}</option>
+            }
+          </select>
+        </div>
+        <div class="field">
+          <label for="exchangeCount">Equivalentes</label>
+          <input id="exchangeCount" name="exchangeCount" type="number" min="0" step="0.5" [(ngModel)]="exchangeCount" />
+        </div>
+        <dl class="exchange-result" aria-live="polite">
+          <div><dt>Energía</dt><dd>{{ exchangeResult().energyKcal | number: '1.0-1' }} kcal</dd></div>
+          <div><dt>Proteína</dt><dd>{{ exchangeResult().proteinG | number: '1.0-1' }} g</dd></div>
+          <div><dt>H. carbono</dt><dd>{{ exchangeResult().carbohydrateG | number: '1.0-1' }} g</dd></div>
+          <div><dt>Grasa</dt><dd>{{ exchangeResult().fatG | number: '1.0-1' }} g</dd></div>
+        </dl>
       </div>
     </section>
     <section class="import-guide">
@@ -327,9 +381,6 @@ import { AuthService } from '../../../../nucleo/autenticacion/auth.service';
       .notice {
         margin-bottom: 1rem;
       }
-      .workflow-note {
-        border-color: var(--border-section);
-      }
       .header-actions { display:flex; align-items:center; gap:.65rem; flex-wrap:wrap; justify-content:flex-end; }
       .food-form-panel { margin:1rem 0; border-color:var(--border-section); overflow:hidden; }
       .food-form-panel .surface-header { align-items:flex-start; }
@@ -353,7 +404,7 @@ import { AuthService } from '../../../../nucleo/autenticacion/auth.service';
       .import-history h3 { font:700 1rem var(--font-display); }
       .import-history article { padding:.65rem 0; display:grid; grid-template-columns:1fr auto auto; gap:1rem; align-items:center; border-bottom:1px solid var(--border); font-size:.75rem; }
       .import-history article small { display:block; margin-top:.2rem; color:var(--text-muted); }
-      .import-history code { color:var(--primary-dark); font-size:.68rem; }
+      .import-history code { color:var(--primary-dark); font-size: 0.72rem; }
       .food-toolbar {
         padding: 1rem 1.1rem;
         display: flex;
@@ -402,7 +453,62 @@ import { AuthService } from '../../../../nucleo/autenticacion/auth.service';
       .source small {
         margin-top: 0.2rem;
         color: var(--danger);
-        font-size: 0.66rem;
+        font-size: 0.72rem;
+      }
+      .exchange {
+        margin: 1rem 0;
+      }
+      .source-filter {
+        display: grid;
+        gap: 0.35rem;
+        min-width: 11rem;
+      }
+      .exchange-grid {
+        display: grid;
+        grid-template-columns: minmax(12rem, 2fr) minmax(7rem, 1fr) minmax(16rem, 3fr);
+        gap: 0.9rem;
+        align-items: end;
+      }
+      .exchange-result {
+        margin: 0;
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 0.5rem;
+      }
+      .exchange-result dt {
+        color: var(--text-muted);
+        font-size: 0.75rem;
+      }
+      .exchange-result dd {
+        margin: 0;
+        font-weight: 700;
+      }
+      .portion-cell {
+        min-width: 9rem;
+      }
+      .portion-cell small {
+        display: block;
+        color: var(--text-muted);
+      }
+      .portion-input {
+        margin: 0.2rem 0;
+        display: flex;
+        align-items: center;
+        gap: 0.3rem;
+      }
+      .portion-input input {
+        width: 5rem;
+        min-height: 2rem;
+        padding: 0.2rem 0.4rem;
+      }
+      .portion-cell .equivalents {
+        color: var(--primary-dark);
+        font-weight: 650;
+      }
+      @media (max-width: 800px) {
+        .exchange-grid {
+          grid-template-columns: 1fr;
+        }
       }
       .import-guide {
         padding: 1.3rem;
@@ -434,7 +540,7 @@ import { AuthService } from '../../../../nucleo/autenticacion/auth.service';
         background: var(--primary);
         color: white;
         font-weight: 800;
-        font-size: 0.7rem;
+        font-size: 0.72rem;
       }
       .import-guide p,
       .import-guide small {
@@ -447,10 +553,65 @@ import { AuthService } from '../../../../nucleo/autenticacion/auth.service';
       .import-guide small {
         margin-top: 0.25rem;
         color: var(--text-muted);
-        font-size: 0.68rem;
+        font-size: 0.72rem;
       }
       @media (max-width: 900px) {
-        .import-guide {
+        .exchange {
+        margin: 1rem 0;
+      }
+      .source-filter {
+        display: grid;
+        gap: 0.35rem;
+        min-width: 11rem;
+      }
+      .exchange-grid {
+        display: grid;
+        grid-template-columns: minmax(12rem, 2fr) minmax(7rem, 1fr) minmax(16rem, 3fr);
+        gap: 0.9rem;
+        align-items: end;
+      }
+      .exchange-result {
+        margin: 0;
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 0.5rem;
+      }
+      .exchange-result dt {
+        color: var(--text-muted);
+        font-size: 0.75rem;
+      }
+      .exchange-result dd {
+        margin: 0;
+        font-weight: 700;
+      }
+      .portion-cell {
+        min-width: 9rem;
+      }
+      .portion-cell small {
+        display: block;
+        color: var(--text-muted);
+      }
+      .portion-input {
+        margin: 0.2rem 0;
+        display: flex;
+        align-items: center;
+        gap: 0.3rem;
+      }
+      .portion-input input {
+        width: 5rem;
+        min-height: 2rem;
+        padding: 0.2rem 0.4rem;
+      }
+      .portion-cell .equivalents {
+        color: var(--primary-dark);
+        font-weight: 650;
+      }
+      @media (max-width: 800px) {
+        .exchange-grid {
+          grid-template-columns: 1fr;
+        }
+      }
+      .import-guide {
           grid-template-columns: 1fr;
         }
         .food-toolbar {
@@ -481,6 +642,13 @@ export class FoodsComponent implements OnInit {
   private readonly auth = inject(AuthService);
   private readonly route = inject(ActivatedRoute);
   readonly foods = signal<Food[]>([]);
+  /** El aviso de datos ficticios solo aplica mientras el catálogo tenga alimentos de demostración. */
+  hasDemoFoods(): boolean {
+    return this.foods().some((food) => food.source === 0);
+  }
+  readonly page = signal(1);
+  readonly total = signal(0);
+  readonly totalPages = signal(1);
   readonly loading = signal(false);
   readonly importOpen = signal(false);
   readonly importing = signal(false);
@@ -495,6 +663,11 @@ export class FoodsComponent implements OnInit {
   importEdition = '';
   importReference = '';
   query = '';
+  sourceFilter: number | null = null;
+  readonly exchangeGroups = SMAE_EXCHANGE_GROUPS;
+  exchangeName = SMAE_EXCHANGE_GROUPS[0].name;
+  exchangeCount = 1;
+  private readonly customGrams = signal<Record<string, number>>({});
   foodModel: SavePersonalizedFood = this.emptyFoodModel();
   ngOnInit(): void {
     this.load();
@@ -502,19 +675,48 @@ export class FoodsComponent implements OnInit {
       this.openCreateFood();
     }
   }
-  load(): void {
+  load(page = 1): void {
     this.loading.set(true);
-    this.api.foods(this.query).subscribe({
+    this.api.foods(this.query, page, this.sourceFilter).subscribe({
       next: (r) => {
         this.foods.set(r.items);
+        this.page.set(page);
+        this.total.set(r.total);
+        this.totalPages.set(r.totalPages);
         this.loading.set(false);
       },
       error: (error: Error) => {
         this.foods.set([]);
+        this.total.set(0);
         this.loading.set(false);
         this.toast.show('error', 'No se cargó el catálogo real', error.message);
       },
     });
+  }
+  exchangeResult() {
+    const group = SMAE_EXCHANGE_GROUPS.find((item) => item.name === this.exchangeName) ?? SMAE_EXCHANGE_GROUPS[0];
+    const count = Number(this.exchangeCount) || 0;
+    return {
+      energyKcal: group.energyKcal * count,
+      proteinG: group.proteinG * count,
+      carbohydrateG: group.carbohydrateG * count,
+      fatG: group.fatG * count,
+    };
+  }
+  gramsFor(food: Food): number {
+    return this.customGrams()[food.id] ?? Number(food.portionGrams);
+  }
+  setGrams(food: Food, value: number | null): void {
+    const grams = Number(value);
+    if (!(grams > 0)) return;
+    this.customGrams.update((current) => ({ ...current, [food.id]: grams }));
+  }
+  portionsFor(food: Food): number {
+    const base = Number(food.portionGrams);
+    return base > 0 ? this.gramsFor(food) / base : 1;
+  }
+  scaled(food: Food) {
+    return scaleFood(food, this.portionsFor(food));
   }
   canImport(): boolean {
     return this.auth.hasRole('ClinicAdmin');
@@ -587,9 +789,9 @@ export class FoodsComponent implements OnInit {
     return source === 0
       ? 'EcuadorDemo'
       : source === 1
-        ? 'Ecuador autorizada'
+        ? 'Ecuador (USFQ)'
         : source === 2
-          ? 'SMAE autorizada'
+          ? 'SMAE'
           : 'Personalizado';
   }
   openImport(): void {

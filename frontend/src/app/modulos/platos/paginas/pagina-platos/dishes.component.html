@@ -32,7 +32,7 @@
   <section class="surface" aria-labelledby="dishListTitle">
     <header class="surface-header list-heading">
       <div>
-        <p class="eyebrow">Paso 2 · Platos guardados</p>
+        <p class="eyebrow">Biblioteca</p>
         <h2 id="dishListTitle">Platos guardados</h2>
         <p>Todo plato que crees aparece aquí y también en el selector de Plan de menú.</p>
       </div>
@@ -61,7 +61,7 @@
         </select>
       </div>
       <div class="field">
-        <label for="maxCost">Máximo por porción</label>
+        <label for="maxCost">Costo máximo por porción (USD)</label>
         <input
           id="maxCost"
           name="maxCost"
@@ -389,6 +389,23 @@
             <app-icon name="plus" />Añadir ingrediente
           </button>
         </header>
+        <div class="field">
+          <label for="ingredientFilter">Buscar en el catálogo</label>
+          <input
+            id="ingredientFilter"
+            name="ingredientFilter"
+            autocomplete="off"
+            placeholder="Ej. lenteja, cereal…"
+            [ngModel]="foodFilter()"
+            (ngModelChange)="foodFilter.set($event)"
+          />
+          <small>
+            {{ foods().length }} alimentos en el catálogo.
+            @if (visibleFoods().length === foodOptionLimit) {
+              Se muestran {{ foodOptionLimit }}: escribe para acotar.
+            }
+          </small>
+        </div>
         @for (row of model.ingredients; track $index; let index = $index) {
           <div class="ingredient-row">
             <div class="field food-select">
@@ -400,7 +417,7 @@
                 required
               >
                 <option value="">Selecciona del catálogo</option>
-                @for (item of foods(); track item.id) {
+                @for (item of foodOptions(row.foodItemId); track item.id) {
                   <option [value]="item.id">{{ item.name }} · {{ item.householdMeasure }}</option>
                 }
               </select>

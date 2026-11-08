@@ -1,5 +1,5 @@
 import { DatePipe, DecimalPipe } from '@angular/common';
-import { Component, effect, inject, signal } from '@angular/core';
+import { ChangeDetectorRef, Component, effect, inject, signal } from '@angular/core';
 import { FormsModule, NgForm } from '@angular/forms';
 import { forkJoin } from 'rxjs';
 import { ApiService, EnergyRecord, EnergyResult } from '../../../../nucleo/api.service';
@@ -22,7 +22,6 @@ import { ToastService } from '../../../../compartido/notificaciones/toast.servic
           ajuste clínico.
         </p>
       </div>
-      <span class="badge">Cálculo trazable</span>
     </header>
     <app-patient-context-bar />
     <div class="notice notice-warning">
@@ -55,6 +54,11 @@ import { ToastService } from '../../../../compartido/notificaciones/toast.servic
               <option value="female">Femenino</option>
               <option value="male">Masculino</option></select
             ><small>Constante exigida por las ecuaciones implementadas.</small>
+            @if (sexDiffersFromRecord()) {
+              <small role="status" [style.color]="'var(--warning)'">
+                No coincide con el sexo registrado en el expediente. Confirma que sea intencional.
+              </small>
+            }
           </div>
           <div class="field col-4">
             <label class="required" for="weight">Peso</label
@@ -138,7 +142,7 @@ import { ToastService } from '../../../../compartido/notificaciones/toast.servic
         </div>
         <footer class="form-footer">
           <button class="button button-primary" type="submit" [disabled]="loading()">
-            <app-icon name="energy" /> {{ loading() ? 'Calculando…' : 'Calcular y registrar' }}
+            <app-icon name="energy" /> {{ loading() ? 'Calculando…' : 'Calcular y guardar' }}
           </button>
         </footer>
       </form>
@@ -175,23 +179,23 @@ import { ToastService } from '../../../../compartido/notificaciones/toast.servic
       </section>
     </div>
     <section class="surface energy-history">
-      <header class="surface-header"><div><p class="eyebrow">Expediente</p><h2>Cálculos guardados</h2></div><span class="caption">{{ history().length }} registros</span></header>
+      <header class="surface-header"><div><p class="eyebrow">Expediente</p><h2>Cálculos guardados</h2></div><span class="caption">{{ history().length }} {{ history().length === 1 ? 'registro' : 'registros' }}</span></header>
       <div class="data-table-wrap"><table class="data-table">
         <thead><tr><th>Fecha</th><th>Fórmula</th><th>Datos</th><th>Actividad / ETA</th><th>Total</th><th>Acciones</th></tr></thead>
         <tbody>
           @for (row of history(); track row.id) {
-            <tr><td>{{ row.createdAtUtc | date: 'dd MMM y · HH:mm' : '' : 'es-EC' }}</td><td>{{ formulaLabel(row.formula) }}</td><td>{{ row.weightKg }} kg · {{ row.heightCm }} cm</td><td>{{ row.activityFactor }} · {{ row.etaPercent * 100 | number: '1.0-0' }}%</td><td><strong>{{ row.totalEnergyKcal | number: '1.0-0' }} kcal</strong></td><td><div class="toolbar"><button class="button button-secondary button-small" type="button" (click)="edit(row)">Editar</button>@if (auth.hasRole('ClinicAdmin')) {<button class="button button-danger button-small" type="button" (click)="archive(row)">Archivar</button>}</div></td></tr>
+            <tr><td>{{ row.createdAtUtc | date: 'dd MMM y · HH:mm' : '' : 'es-EC' }}@if (row.calculatedByName) {<small class="row-author">{{ row.calculatedByName }}</small>}</td><td>{{ formulaLabel(row.formula) }}</td><td>{{ row.weightKg }} kg · {{ row.heightCm }} cm</td><td>{{ row.activityFactor }} · {{ row.etaPercent * 100 | number: '1.0-0' }}%</td><td><strong>{{ row.totalEnergyKcal | number: '1.0-0' }} kcal</strong></td><td><div class="toolbar"><button class="button button-secondary button-small" type="button" (click)="edit(row)">Editar</button>@if (auth.hasRole('ClinicAdmin')) {<button class="button button-danger button-small" type="button" (click)="archive(row)">Archivar</button>}</div></td></tr>
           } @empty { <tr><td colspan="6" class="empty-row">Todavía no hay cálculos guardados para el paciente activo.</td></tr> }
         </tbody>
       </table></div>
     </section>
     <section class="method surface">
       <div class="surface-body">
-        <h2>Método transparente</h2>
+        <h2>Cómo se calcula</h2>
         <p>
           <strong>Total = reposo × factor de actividad + ETA + ajuste.</strong> El ETA se calcula
-          como porcentaje del subtotal reposo × actividad. La pantalla conserva fórmula, insumos y
-          fuente para auditoría.
+          como porcentaje del subtotal reposo × actividad. Cada cálculo guarda la fórmula y los
+          datos usados.
         </p>
         <div class="source-links">
           <span>Mifflin–St Jeor · 1990</span><span>Harris–Benedict revisada · 1984</span
@@ -202,6 +206,10 @@ import { ToastService } from '../../../../compartido/notificaciones/toast.servic
   </div>`,
   styles: [
     `
+      .row-author {
+        display: block;
+        color: var(--text-muted);
+      }
       .notice {
         margin-bottom: 1rem;
       }
@@ -280,7 +288,7 @@ import { ToastService } from '../../../../compartido/notificaciones/toast.servic
         font-size: 0.82rem;
       }
       .equation cite {
-        font-size: 0.7rem;
+        font-size: 0.72rem;
       }
       .result .notice {
         position: relative;
@@ -343,6 +351,7 @@ export class EnergyComponent {
   private readonly toast = inject(ToastService);
   readonly auth = inject(AuthService);
   private readonly patientContext = inject(PatientContextService);
+  private readonly changeDetector = inject(ChangeDetectorRef);
   readonly loading = signal(false);
   readonly result = signal<EnergyResult | null>(null);
   readonly history = signal<EnergyRecord[]>([]);
@@ -358,7 +367,23 @@ export class EnergyComponent {
     etaPercent: 0.1,
     goalAdjustmentKcal: 0,
   };
+  private applyClinicDefaults(): void {
+    this.api.settings().subscribe({
+      next: (settings) => {
+        if (this.editingId() || this.result()) return;
+        this.model.formula = settings.defaultFormula;
+        this.model.etaPercent = settings.defaultEtaPercent;
+        this.changeDetector.markForCheck();
+      },
+      error: () => undefined,
+    });
+  }
+  private recordSex = '';
+  sexDiffersFromRecord(): boolean {
+    return !!this.recordSex && !!this.model.sex && this.model.sex !== this.recordSex;
+  }
   constructor() {
+    this.applyClinicDefaults();
     effect(() => {
       const patientId = this.patientContext.selectedId();
       if (!patientId || patientId === this.model.patientId) return;
@@ -375,10 +400,12 @@ export class EnergyComponent {
         next: ({ patient, anthropometry }) => {
           if (this.patientContext.selectedId() !== patientId) return;
           this.model.ageYears = this.age(patient.dateOfBirth);
-          this.model.sex =
+          this.recordSex =
             patient.sexAtBirth === 0 ? 'female' : patient.sexAtBirth === 1 ? 'male' : '';
+          this.model.sex = this.recordSex;
           this.model.weightKg = anthropometry?.weightKg ?? null;
           this.model.heightCm = anthropometry?.heightCm ?? null;
+          this.changeDetector.markForCheck();
         },
         error: (error: Error) =>
           this.toast.show('error', 'No se cargaron los datos del paciente', error.message),

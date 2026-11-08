@@ -7,7 +7,7 @@ colors:
   primary-hover: "#28620F"
   fresh: "#8DBA26"
   avocado-soft: "#DEECA4"
-  background: "#FDFDFD"
+  background: "#F6F7F1"
   surface: "#FFFFFF"
   surface-muted: "#F5F8EF"
   text: "#3B230F"

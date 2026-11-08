@@ -8,17 +8,39 @@ namespace NutriVida.Api.Services.Pdf;
 public sealed record ClinicalReportPdfData(
     string PatientName,
     string DocumentNumber,
+    DateOnly DateOfBirth,
     string Goal,
+    string PreparedBy,
     DateTime GeneratedAtUtc,
     IReadOnlyList<ClinicalMeasurementPdfRow> Measurements,
     ClinicalAssessmentPdfRow? Assessment,
-    IReadOnlyList<ClinicalFollowUpPdfRow> FollowUps);
+    ClinicalDiagnosisPdfRow? Diagnosis,
+    ClinicalEnergyPdfRow? Energy,
+    ClinicalMenuPlanPdfData? MenuPlan,
+    IReadOnlyList<ClinicalFollowUpPdfRow> FollowUps,
+    string PracticeName = "NutriVida",
+    bool IsPatientCopy = false,
+    string AnthropometryDetails = "");
 
 public sealed record ClinicalMeasurementPdfRow(DateTime Date, decimal WeightKg, decimal HeightCm,
-    decimal? WaistCm, decimal? BodyFatPercent);
+    decimal? WaistCm, decimal? HipCm, decimal? BodyFatPercent);
 public sealed record ClinicalAssessmentPdfRow(string DailyIntake, string Intolerances, string Allergies,
-    decimal SleepHours, string ExerciseType, int ExerciseMinutes, bool Constipation,
-    int? BristolStoolType, string ClinicalNotes);
+    string EatingSchedule, decimal SleepHours, string SleepQuality, string ExerciseType,
+    int ExerciseMinutes, string ExerciseSchedule, bool Constipation, int? BristolStoolType,
+    string BowelFrequency, string ClinicalNotes,
+    string MedicalHistory = "", string FamilyHistory = "", string Medications = "",
+    string Supplements = "", string LabResults = "", string ReproductiveStatus = "",
+    string Recall24hJson = "");
+public sealed record ClinicalDiagnosisPdfRow(string ProblemCode, string ProblemStatement, string Etiology,
+    string SignsAndSymptoms, string Status, string ProfessionalName, DateTime CreatedAtUtc);
+public sealed record ClinicalEnergyPdfRow(string Formula, decimal RestingEnergyKcal,
+    decimal ActivityFactor, decimal EtaPercent, decimal GoalAdjustmentKcal,
+    decimal TotalEnergyKcal, DateTime CreatedAtUtc);
+public sealed record ClinicalMenuPlanPdfData(string Name, DateOnly StartsOn, DateOnly EndsOn,
+    decimal EnergyTargetKcal, string Status, string ProfessionalNotes,
+    IReadOnlyList<ClinicalMenuItemPdfRow> Items);
+public sealed record ClinicalMenuItemPdfRow(int DayOfWeek, string MealName, string FoodName,
+    decimal Portions, decimal Grams, decimal EnergyKcal, string HouseholdMeasure);
 public sealed record ClinicalFollowUpPdfRow(DateOnly FollowUpDate, decimal? WeightKg, decimal? SleepHours,
     int? ExerciseMinutes, string ExerciseType, int? AdherencePercent, int? BristolStoolType, string Symptoms);
 
@@ -55,7 +77,7 @@ public sealed class ClinicalReportPdfService : IClinicalReportPdfService
         section.PageSetup.RightMargin = Unit.FromCentimeter(1.7);
 
         var header = section.Headers.Primary.AddParagraph();
-        header.AddFormattedText("NutriVida", TextFormat.Bold).Font.Color = Green;
+        header.AddFormattedText(Clean(data.PracticeName, "NutriVida"), TextFormat.Bold).Font.Color = Green;
         header.AddText("  ·  Gestión clínica nutricional");
         header.Format.Font.Size = Unit.FromPoint(9);
         header.Format.Borders.Bottom.Width = Unit.FromPoint(0.75);
@@ -70,11 +92,13 @@ public sealed class ClinicalReportPdfService : IClinicalReportPdfService
         footer.AddText(" de ");
         footer.AddNumPagesField();
 
-        AddTitle(section, "Resumen clínico nutricional");
+        AddTitle(section, "Informe nutricional");
         var meta = section.AddParagraph();
         meta.AddFormattedText(data.PatientName, TextFormat.Bold).Font.Size = Unit.FromPoint(13);
         meta.AddLineBreak();
-        meta.AddText($"Identificación: {data.DocumentNumber}   ·   Generado: {data.GeneratedAtUtc:dd/MM/yyyy HH:mm} UTC");
+        meta.AddText($"Identificación: {data.DocumentNumber}   ·   Nacimiento: {data.DateOfBirth:dd/MM/yyyy}");
+        meta.AddLineBreak();
+        meta.AddText($"Profesional: {Clean(data.PreparedBy, "NutriVida")}   ·   Emitido: {data.GeneratedAtUtc.AddHours(-5):dd/MM/yyyy HH:mm} (hora de Ecuador)");
         meta.Format.SpaceAfter = Unit.FromPoint(8);
 
         AddCallout(section, "Objetivo terapéutico", Clean(data.Goal, "Sin objetivo registrado."));
@@ -84,27 +108,92 @@ public sealed class ClinicalReportPdfService : IClinicalReportPdfService
             AddEmpty(section, "No existen mediciones registradas.");
         else
         {
-            var table = CreateTable(section, 5);
-            AddHeaderRow(table, "Fecha", "Peso", "Talla", "Cintura", "% grasa");
+            var table = CreateTable(section, 6);
+            AddHeaderRow(table, "Fecha", "Peso", "Talla", "Cintura", "Cadera", "% grasa");
             foreach (var row in data.Measurements.TakeLast(12))
                 AddDataRow(table, row.Date.ToString("dd/MM/yyyy"), $"{row.WeightKg:0.0} kg",
-                    $"{row.HeightCm:0.0} cm", Format(row.WaistCm, "cm"), Format(row.BodyFatPercent, "%"));
+                    $"{row.HeightCm:0.0} cm", Format(row.WaistCm, "cm"), Format(row.HipCm, "cm"),
+                    Format(row.BodyFatPercent, "%"));
         }
 
-        AddHeading(section, "Última evaluación integral");
+        if (!string.IsNullOrWhiteSpace(data.AnthropometryDetails))
+            AddLabelValue(section, "Medidas adicionales de la última toma", data.AnthropometryDetails);
+
+        AddHeading(section, "Evaluación nutricional vigente");
         if (data.Assessment is null)
             AddEmpty(section, "No existe una evaluación nutricional registrada.");
         else
         {
             var assessment = data.Assessment;
             AddLabelValue(section, "Ingesta diaria", assessment.DailyIntake);
+            var recallTotals = Recall24hJson.DescribeTotals(Recall24hJson.Parse(assessment.Recall24hJson));
+            if (recallTotals.Length > 0) AddLabelValue(section, "Recordatorio de 24 horas", recallTotals);
+            AddLabelValue(section, "Horarios de alimentación", assessment.EatingSchedule);
             AddLabelValue(section, "Alergias", assessment.Allergies);
             AddLabelValue(section, "Intolerancias", assessment.Intolerances);
-            AddLabelValue(section, "Sueño y ejercicio", $"{assessment.SleepHours:0.0} h · {Clean(assessment.ExerciseType, "sin tipo")} · {assessment.ExerciseMinutes} min");
+            AddLabelValue(section, "Sueño", $"{assessment.SleepHours:0.0} h · {Clean(assessment.SleepQuality, "calidad no registrada")}");
+            AddLabelValue(section, "Actividad física", $"{Clean(assessment.ExerciseType, "sin tipo")} · {assessment.ExerciseMinutes} min/semana · {Clean(assessment.ExerciseSchedule, "horario no registrado")}");
             AddLabelValue(section, "Tránsito intestinal", assessment.Constipation
-                ? $"Estreñimiento reportado · Bristol {assessment.BristolStoolType?.ToString() ?? "sin registro"}"
-                : $"Sin estreñimiento · Bristol {assessment.BristolStoolType?.ToString() ?? "sin registro"}");
-            AddLabelValue(section, "Notas clínicas", assessment.ClinicalNotes);
+                ? $"Estreñimiento reportado · Bristol {assessment.BristolStoolType?.ToString() ?? "sin registro"} · {Clean(assessment.BowelFrequency, "frecuencia no registrada")}"
+                : $"Sin estreñimiento · Bristol {assessment.BristolStoolType?.ToString() ?? "sin registro"} · {Clean(assessment.BowelFrequency, "frecuencia no registrada")}");
+            if (!data.IsPatientCopy)
+            {
+                AddLabelValue(section, "Antecedentes personales", assessment.MedicalHistory);
+                AddLabelValue(section, "Antecedentes familiares", assessment.FamilyHistory);
+                AddLabelValue(section, "Medicación", assessment.Medications);
+                AddLabelValue(section, "Suplementos", assessment.Supplements);
+                AddLabelValue(section, "Laboratorios", assessment.LabResults);
+                AddLabelValue(section, "Embarazo o lactancia", assessment.ReproductiveStatus);
+                AddLabelValue(section, "Notas clínicas", assessment.ClinicalNotes);
+            }
+        }
+
+        AddHeading(section, "Diagnóstico nutricional PES");
+        if (data.Diagnosis is null)
+            AddEmpty(section, data.IsPatientCopy ? "Sin diagnóstico aprobado para compartir." : "No existe un diagnóstico PES registrado.");
+        else
+        {
+            AddLabelValue(section, "Problema", $"{Clean(data.Diagnosis.ProblemCode, "Sin código")} · {data.Diagnosis.ProblemStatement}");
+            AddLabelValue(section, "Etiología", data.Diagnosis.Etiology);
+            AddLabelValue(section, "Signos y síntomas", data.Diagnosis.SignsAndSymptoms);
+            AddLabelValue(section, "Estado y responsable", $"{StatusLabel(data.Diagnosis.Status)} · {Clean(data.Diagnosis.ProfessionalName, "Sin responsable")} · {data.Diagnosis.CreatedAtUtc:dd/MM/yyyy}");
+        }
+
+        AddHeading(section, "Cálculo energético");
+        if (data.Energy is null)
+            AddEmpty(section, "No existe un cálculo energético guardado.");
+        else
+        {
+            var energy = CreateTable(section, 6);
+            AddHeaderRow(energy, "Fórmula", "GER", "Actividad", "ETA", "Ajuste", "Objetivo");
+            AddDataRow(energy, FormulaLabel(data.Energy.Formula), $"{data.Energy.RestingEnergyKcal:0} kcal",
+                $"× {data.Energy.ActivityFactor:0.00}", $"{data.Energy.EtaPercent * 100:0.#}%",
+                $"{data.Energy.GoalAdjustmentKcal:+0;-0;0} kcal", $"{data.Energy.TotalEnergyKcal:0} kcal/día");
+        }
+
+        AddHeading(section, "Plan de alimentación");
+        if (data.MenuPlan is null)
+            AddEmpty(section, data.IsPatientCopy ? "Sin plan aprobado para compartir." : "No existe un plan de menú vinculado al informe.");
+        else
+        {
+            var plan = data.MenuPlan;
+            AddCallout(section, plan.Name,
+                $"{plan.StartsOn:dd/MM/yyyy} al {plan.EndsOn:dd/MM/yyyy} · {plan.EnergyTargetKcal:0} kcal/día · {StatusLabel(plan.Status)}");
+            AddLabelValue(section, "Indicaciones", plan.ProfessionalNotes);
+            if (plan.Items.Count == 0)
+                AddEmpty(section, "El plan no contiene alimentos registrados.");
+            else
+            {
+                var menu = CreateTable(section, 6);
+                AddHeaderRow(menu, "Día", "Tiempo", "Alimento / preparación", "Porción", "Cantidad", "Energía");
+                foreach (var item in plan.Items.OrderBy(x => x.DayOfWeek).ThenBy(x => x.MealName).Take(42))
+                    AddDataRow(menu, DayName(item.DayOfWeek), item.MealName, item.FoodName,
+                        $"{item.Portions:0.##}",
+                        string.IsNullOrWhiteSpace(item.HouseholdMeasure) ? $"{item.Grams:0.#} g" : $"{item.HouseholdMeasure} · {item.Grams:0.#} g",
+                        $"{item.EnergyKcal:0} kcal");
+                if (plan.Items.Count > 42)
+                    AddEmpty(section, $"Se muestran 42 de {plan.Items.Count} alimentos para mantener el documento conciso.");
+            }
         }
 
         AddHeading(section, "Seguimiento y evolución");
@@ -227,6 +316,25 @@ public sealed class ClinicalReportPdfService : IClinicalReportPdfService
 
     private static string Format(decimal? value, string unit) => value.HasValue ? $"{value:0.0} {unit}" : "—";
     private static string Clean(string? value, string fallback) => string.IsNullOrWhiteSpace(value) ? fallback : value.Trim();
+    private static string DayName(int day) => day switch
+    {
+        1 => "Lun", 2 => "Mar", 3 => "Mié", 4 => "Jue", 5 => "Vie", 6 => "Sáb", 7 => "Dom", _ => "—"
+    };
+    private static string FormulaLabel(string formula) => formula switch
+    {
+        "MifflinStJeor" => "Mifflin-St Jeor",
+        "RevisedHarrisBenedict" => "Harris-Benedict revisada",
+        _ => Clean(formula, "Sin fórmula")
+    };
+    private static string StatusLabel(string status) => status switch
+    {
+        "Draft" => "Borrador",
+        "ReadyForReview" => "Listo para revisión",
+        "Approved" => "Aprobado",
+        "Sent" => "Enviado",
+        "Superseded" => "Reemplazado",
+        _ => Clean(status, "Sin estado")
+    };
 
     private static void EnsureFontResolver()
     {

@@ -40,6 +40,7 @@ public sealed class EnergyController(IEnergyCalculator calculator, NutriVidaDbCo
         var result = calculator.Calculate(new EnergyCalculationRequest(request.Formula, request.WeightKg,
             request.HeightCm, request.AgeYears, request.Sex, request.ActivityFactor, request.EtaPercent,
             request.GoalAdjustmentKcal));
+        if (result.TotalEnergyKcal < EnergyCalculator.MinimumTotalKcal) return TotalTooLow();
         if (request.PatientId.HasValue)
         {
             db.EnergyCalculations.Add(new EnergyCalculation
@@ -54,7 +55,8 @@ public sealed class EnergyController(IEnergyCalculator calculator, NutriVidaDbCo
                 EtaPercent = request.EtaPercent,
                 GoalAdjustmentKcal = request.GoalAdjustmentKcal,
                 RestingEnergyKcal = result.RestingEnergyKcal,
-                TotalEnergyKcal = result.TotalEnergyKcal
+                TotalEnergyKcal = result.TotalEnergyKcal,
+                CalculatedByName = User.Identity?.Name ?? "Profesional"
             });
             await db.SaveChangesAsync(cancellationToken);
         }
@@ -74,7 +76,9 @@ public sealed class EnergyController(IEnergyCalculator calculator, NutriVidaDbCo
         var result = calculator.Calculate(new EnergyCalculationRequest(request.Formula, request.WeightKg,
             request.HeightCm, request.AgeYears, request.Sex, request.ActivityFactor, request.EtaPercent,
             request.GoalAdjustmentKcal));
+        if (result.TotalEnergyKcal < EnergyCalculator.MinimumTotalKcal) return TotalTooLow();
         Apply(request, result, calculation);
+        calculation.CalculatedByName = User.Identity?.Name ?? "Profesional";
         await db.SaveChangesAsync(cancellationToken);
         return Ok(result);
     }
@@ -93,6 +97,9 @@ public sealed class EnergyController(IEnergyCalculator calculator, NutriVidaDbCo
         await db.SaveChangesAsync(cancellationToken);
         return NoContent();
     }
+
+    private IActionResult TotalTooLow() => ValidationProblem(
+        $"El requerimiento resultante es menor a {EnergyCalculator.MinimumTotalKcal:0} kcal/día. Revisa los datos y el ajuste por objetivo.");
 
     private static void Apply(CalculateEnergyRequest request, EnergyCalculationResult result, EnergyCalculation calculation)
     {

@@ -6,6 +6,7 @@ export interface ConsultationListItem {
   durationMinutes: number;
   reason: string;
   status: string;
+  notes?: string;
 }
 
 export interface CreateConsultationRequest {

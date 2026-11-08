@@ -3,7 +3,7 @@
   --primary-dark: #28620f;
   --fresh: #8dba26;
   --avocado-soft: #deeca4;
-  --background: #fdfdfd;
+  --background: #f6f7f1;
   --surface: #ffffff;
   --surface-muted: #f5f8ef;
   --text: #3b230f;
@@ -71,7 +71,7 @@
 }
 .professional-summary small {
   margin-top: 0.15rem;
-  font-size: 0.68rem;
+  font-size: 0.72rem;
 }
 .page-actions {
   display: flex;
@@ -266,6 +266,7 @@ h3 {
   background: var(--surface);
   border: 1px solid var(--border-section);
   border-radius: var(--radius-lg);
+  box-shadow: 0 1px 2px rgba(59, 35, 15, 0.05), 0 6px 18px -14px rgba(59, 35, 15, 0.22);
 }
 .template-disclosure {
   margin-bottom: 1rem;
@@ -506,7 +507,7 @@ h3 {
   border-radius: 0.35rem;
   background: var(--surface-muted);
   color: var(--primary-dark);
-  font-size: 0.7rem;
+  font-size: 0.72rem;
   font-weight: 800;
 }
 .badge-warning {
@@ -536,7 +537,7 @@ h3 {
   color: var(--text-muted);
   background: #fafbf7;
   border-bottom: 1px solid var(--border);
-  font-size: 0.69rem;
+  font-size: 0.72rem;
   letter-spacing: 0.06em;
   text-transform: uppercase;
 }
@@ -547,6 +548,9 @@ h3 {
 }
 .data-table tbody tr:last-child td {
   border-bottom: 0;
+}
+.data-table tbody tr {
+  transition: background var(--motion);
 }
 .data-table tbody tr:hover {
   background: #fbfcf8;
@@ -755,7 +759,7 @@ dialog::backdrop {
 .dashboard-page .donut small {
   margin-top: 0.2rem;
   color: var(--text-muted);
-  font-size: 0.62rem;
+  font-size: 0.72rem;
 }
 
 .dashboard-page .patient-status ul {
@@ -772,12 +776,12 @@ dialog::backdrop {
   align-items: center;
   gap: 0.4rem;
   color: var(--text-muted);
-  font-size: 0.62rem;
+  font-size: 0.72rem;
 }
 
 .dashboard-page .patient-status li strong {
   color: var(--text);
-  font-size: 0.6rem;
+  font-size: 0.72rem;
 }
 
 .dashboard-page .patient-status i {
@@ -807,7 +811,7 @@ dialog::backdrop {
 
 .dashboard-page .objective-summary > strong {
   margin-bottom: 0.15rem;
-  font-size: 0.67rem;
+  font-size: 0.72rem;
 }
 
 .dashboard-page .objective-summary > div {
@@ -815,7 +819,7 @@ dialog::backdrop {
   grid-template-columns: 1fr auto;
   gap: 0.2rem 0.5rem;
   color: var(--text-muted);
-  font-size: 0.6rem;
+  font-size: 0.72rem;
 }
 
 .dashboard-page .objective-summary b {
@@ -922,7 +926,7 @@ dialog::backdrop {
 .nutrition-panel dt,
 .nutrition-panel small {
   color: var(--text-muted);
-  font-size: 0.7rem;
+  font-size: 0.72rem;
 }
 .nutrition-panel .energy dt {
   color: #dcebc6;

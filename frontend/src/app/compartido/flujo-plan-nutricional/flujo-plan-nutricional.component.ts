@@ -1,4 +1,4 @@
-import { Component, input } from '@angular/core';
+import { AfterViewInit, Component, ElementRef, inject, input } from '@angular/core';
 import { RouterLink } from '@angular/router';
 
 type PlanFlowStep = 1 | 2 | 3 | 4;
@@ -163,13 +163,13 @@ interface FlowAction {
       }
       .flow-steps small {
         color: var(--text-muted);
-        font-size: 0.66rem;
+        font-size: 0.72rem;
         line-height: 1.25;
       }
       .step-state {
         margin-left: auto;
         color: var(--primary-dark);
-        font-size: 0.64rem;
+        font-size: 0.72rem;
         font-weight: 800;
         text-transform: uppercase;
         letter-spacing: 0.04em;
@@ -193,7 +193,7 @@ interface FlowAction {
         display: block;
         margin-bottom: 0.2rem;
         color: var(--text-muted);
-        font-size: 0.61rem;
+        font-size: 0.72rem;
         font-weight: 800;
         letter-spacing: 0.08em;
       }
@@ -231,8 +231,16 @@ interface FlowAction {
     `,
   ],
 })
-export class FlujoPlanNutricionalComponent {
+export class FlujoPlanNutricionalComponent implements AfterViewInit {
+  private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
   readonly currentStep = input.required<PlanFlowStep>();
+
+  ngAfterViewInit(): void {
+    // En móvil la ruta se desplaza de lado: el paso actual debe quedar a la vista.
+    const list = this.host.nativeElement.querySelector<HTMLElement>('.flow-steps');
+    const current = list?.querySelector<HTMLElement>('.is-current');
+    if (list && current) list.scrollLeft = current.offsetLeft - list.offsetLeft;
+  }
 
   readonly steps: FlowStep[] = [
     {

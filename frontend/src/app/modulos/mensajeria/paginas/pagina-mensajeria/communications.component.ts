@@ -1,5 +1,5 @@
 import { DatePipe } from '@angular/common';
-import { Component, effect, inject, signal } from '@angular/core';
+import { Component, ElementRef, ViewChild, effect, inject, signal } from '@angular/core';
 import { FormsModule, NgForm } from '@angular/forms';
 import { ApiService, MenuPlanSummary, PatientDetails } from '../../../../nucleo/api.service';
 import { AuthService } from '../../../../nucleo/autenticacion/auth.service';
@@ -28,20 +28,21 @@ import { QuickTemplatesComponent } from '../../../plantillas/paginas/tarjetas-pl
           Comparte el PDF clínico por correo o envíalo como documento mediante WhatsApp Business.
         </p>
       </div>
-      <span class="badge">Envío con confirmación</span>
     </header>
     <app-patient-context-bar />
     <div class="notice notice-warning">
       <app-icon name="info" /><span
-        >Primero prepara y revisa el documento. Si WhatsApp Business está configurado, confirma el
-        número y NutriVida carga el PDF directamente a Meta. El estado “aceptado” no significa
-        todavía “entregado” o “leído”.</span
+        >Primero prepara y revisa el documento; nada se envía sin tu confirmación. El paciente solo recibe planes y diagnósticos aprobados, sin tus notas ni antecedentes clínicos. “Aceptado” significa
+        que el servicio recibió el envío, no que el paciente ya lo haya leído.</span
       >
     </div>
-    <app-quick-templates
-      scope="communication"
-      (templateSelected)="aplicarPlantilla($event)"
-    />
+    <details class="template-disclosure">
+      <summary>Usar un mensaje frecuente <small>Opcional</small></summary>
+      <app-quick-templates
+        scope="communication"
+        (templateSelected)="aplicarPlantilla($event)"
+      />
+    </details>
     <div class="message-layout">
       <form #messageForm="ngForm" class="surface" novalidate (ngSubmit)="preview(messageForm)">
         <header class="surface-header">
@@ -74,7 +75,7 @@ import { QuickTemplatesComponent } from '../../../plantillas/paginas/tarjetas-pl
               <option value="">Sin vincular un plan</option>
               @for (plan of plans(); track plan.id) {
                 <option [value]="plan.id">
-                  {{ plan.name }} · {{ plan.energyTargetKcal }} kcal
+                  {{ plan.name }} · {{ plan.energyTargetKcal }} kcal{{ plan.status === 2 ? '' : ' · sin aprobar' }}
                 </option>
               }
             </select>
@@ -94,7 +95,7 @@ import { QuickTemplatesComponent } from '../../../plantillas/paginas/tarjetas-pl
                 name="channel"
                 [value]="0"
                 [(ngModel)]="channel"
-                (ngModelChange)="clearPrepared()"
+                (ngModelChange)="channelChanged()"
               /><app-icon name="mail" /><span
                 ><strong>Correo</strong
                 ><small>{{
@@ -107,7 +108,7 @@ import { QuickTemplatesComponent } from '../../../plantillas/paginas/tarjetas-pl
                 name="channel"
                 [value]="1"
                 [(ngModel)]="channel"
-                (ngModelChange)="clearPrepared()"
+                (ngModelChange)="channelChanged()"
               /><app-icon name="phone" /><span
                 ><strong>WhatsApp</strong
                 ><small>{{
@@ -118,6 +119,38 @@ import { QuickTemplatesComponent } from '../../../plantillas/paginas/tarjetas-pl
               ></label
             >
           </fieldset>
+          @if (!channelConsent()) {
+            <div id="consentGuidance" class="consent-guidance col-12" role="group" aria-labelledby="consentTitle">
+              <span class="consent-guidance-icon"><app-icon name="shield" /></span>
+              <div>
+                <strong id="consentTitle">Autoriza este canal antes de preparar el envío</strong>
+                <p>
+                  Destino: <b>{{ channelDestination() || 'no registrado' }}</b>. Marca la confirmación
+                  únicamente si el paciente autorizó recibir información por
+                  {{ channel === 0 ? 'correo' : 'WhatsApp' }}.
+                </p>
+                <button
+                  type="button"
+                  class="consent-check"
+                  [class.confirmed]="consentAcknowledged"
+                  [attr.aria-pressed]="consentAcknowledged"
+                  (click)="consentAcknowledged = !consentAcknowledged"
+                >
+                  <app-icon [name]="consentAcknowledged ? 'check' : 'shield'" />
+                  Confirmo que el paciente otorgó su autorización para este canal.
+                </button>
+              </div>
+              <button
+                class="button button-secondary button-small"
+                type="button"
+                [disabled]="savingConsent() || !consentAcknowledged || !channelDestination()"
+                (click)="registerConsent()"
+              >
+                <app-icon name="check" />
+                {{ savingConsent() ? 'Registrando…' : 'Registrar autorización' }}
+              </button>
+            </div>
+          }
           <div class="field col-12">
             <label class="required" for="subject">Asunto</label
             ><input
@@ -192,7 +225,7 @@ import { QuickTemplatesComponent } from '../../../plantillas/paginas/tarjetas-pl
             >
               Descargar PDF
             </a>
-            @if (action.canSendAutomatically && channel === 1) {
+            @if (action.canSendAutomatically) {
               <div class="delivery-confirmation">
                 <label>
                   <input
@@ -200,21 +233,26 @@ import { QuickTemplatesComponent } from '../../../plantillas/paginas/tarjetas-pl
                     [checked]="deliveryConfirmed()"
                     (change)="deliveryConfirmed.set($any($event.target).checked)"
                   />
-                  Confirmo el envío del PDF a {{ action.destination }}
+                  Confirmo el envío del PDF por {{ channel === 0 ? 'correo' : 'WhatsApp' }} a
+                  {{ action.destination }}
                 </label>
                 <button
                   class="button button-primary"
                   type="button"
-                  [disabled]="sendingWhatsApp() || !deliveryConfirmed() || deliveryAccepted()"
-                  (click)="sendWhatsAppDocument(action.dispatchId)"
+                  [disabled]="sendingDocument() || !deliveryConfirmed() || deliveryAccepted()"
+                  (click)="sendPreparedDocument(action.dispatchId)"
                 >
-                  <app-icon name="phone" />
+                  <app-icon [name]="channel === 0 ? 'mail' : 'phone'" />
                   {{
                     deliveryAccepted()
-                      ? 'PDF aceptado por WhatsApp'
-                      : sendingWhatsApp()
+                      ? channel === 0
+                        ? 'Correo aceptado'
+                        : 'PDF aceptado por WhatsApp'
+                      : sendingDocument()
                         ? 'Enviando PDF…'
-                        : 'Enviar PDF por WhatsApp'
+                        : channel === 0
+                          ? 'Enviar PDF por correo'
+                          : 'Enviar PDF por WhatsApp'
                   }}
                 </button>
               </div>
@@ -243,11 +281,13 @@ import { QuickTemplatesComponent } from '../../../plantillas/paginas/tarjetas-pl
         </div>
         <div class="checks">
           <p>
-            <app-icon name="check" />
+            <app-icon [name]="channelConsent() ? 'check' : 'info'" />
             {{ channelConsent() ? 'Consentimiento vigente' : 'Consentimiento pendiente' }}
           </p>
-          <p><app-icon name="check" /> {{ channelDestination() || 'Destino pendiente' }}</p>
-          <p><app-icon name="check" /> Preparación con registro de auditoría</p>
+          <p>
+            <app-icon [name]="channelDestination() ? 'check' : 'info'" />
+            {{ channelDestination() || 'Destino pendiente' }}
+          </p>
         </div>
       </aside>
     </div>
@@ -276,14 +316,14 @@ import { QuickTemplatesComponent } from '../../../plantillas/paginas/tarjetas-pl
                 <td>{{ item.channel === 'Email' ? 'Correo' : 'WhatsApp' }}</td>
                 <td>{{ item.destinationMasked }}</td>
                 <td>
-                  <span class="badge">{{ statusLabel(item.status) }}</span>
+                  <span class="badge">{{ statusLabel(item.status, item.channel) }}</span>
                 </td>
                 <td>
                   @if (auth.hasRole('ClinicAdmin')) {
                     <button
                       class="button button-danger button-small"
                       type="button"
-                      (click)="archive(item)"
+                      (click)="confirmArchive(item)"
                     >
                       Archivar
                     </button>
@@ -301,6 +341,17 @@ import { QuickTemplatesComponent } from '../../../plantillas/paginas/tarjetas-pl
         </table>
       </div>
     </section>
+    <dialog #archiveDialog class="confirm-dialog" (cancel)="cancelArchive()">
+      <header class="dialog-header"><h2>Archivar comunicación</h2></header>
+      <div class="dialog-body">
+        <p>Este registro dejará de aparecer en el historial activo, pero se conservará para auditoría.</p>
+        <div class="notice notice-warning"><app-icon name="info" /> No se elimina el PDF ni la trazabilidad clínica.</div>
+      </div>
+      <footer class="dialog-footer">
+        <button class="button button-secondary" type="button" (click)="cancelArchive()">Cancelar</button>
+        <button class="button button-danger" type="button" (click)="archive()">Archivar registro</button>
+      </footer>
+    </dialog>
   </div>`,
   styles: [
     `
@@ -359,7 +410,7 @@ import { QuickTemplatesComponent } from '../../../plantillas/paginas/tarjetas-pl
       .channels small {
         margin-top: 0.2rem;
         color: var(--text-muted);
-        font-size: 0.68rem;
+        font-size: 0.72rem;
       }
       .send-footer {
         padding: 1rem 1.15rem;
@@ -369,6 +420,44 @@ import { QuickTemplatesComponent } from '../../../plantillas/paginas/tarjetas-pl
         border-top: 1px solid var(--border);
         flex-wrap: wrap;
       }
+      .consent-guidance {
+        padding: 0.85rem;
+        display: grid;
+        grid-template-columns: auto minmax(0, 1fr) auto;
+        align-items: center;
+        gap: 0.75rem;
+        border: 1px solid color-mix(in srgb, var(--warning), transparent 62%);
+        border-radius: var(--radius-md);
+        background: var(--warning-soft);
+      }
+      .consent-guidance-icon {
+        width: 2.2rem;
+        height: 2.2rem;
+        display: grid;
+        place-items: center;
+        border-radius: 50%;
+        color: var(--warning);
+        background: var(--surface);
+      }
+      .consent-guidance strong { font-size: .8rem; }
+      .consent-guidance p { margin: .18rem 0 0; color: var(--text-muted); font-size: 0.72rem; line-height: 1.4; }
+      .consent-check {
+        display: flex;
+        align-items: flex-start;
+        gap: .5rem;
+        margin-top: .65rem;
+        padding: .45rem .55rem;
+        border: 1px solid var(--border-section);
+        border-radius: var(--radius-sm);
+        background: var(--surface);
+        color: var(--text);
+        font-size: .74rem;
+        font-weight: 700;
+        line-height: 1.4;
+        text-align: left;
+        cursor: pointer;
+      }
+      .consent-check.confirmed { border-color: var(--primary); color: var(--primary-dark); box-shadow: inset 0 0 0 1px var(--primary); }
       .delivery-confirmation {
         flex: 1 1 100%;
         padding: 0.85rem;
@@ -453,7 +542,7 @@ import { QuickTemplatesComponent } from '../../../plantillas/paginas/tarjetas-pl
         display: block;
         margin-top: 0.45rem;
         color: var(--text-muted);
-        font-size: 0.6rem;
+        font-size: 0.72rem;
         text-align: center;
       }
       .checks {
@@ -465,7 +554,7 @@ import { QuickTemplatesComponent } from '../../../plantillas/paginas/tarjetas-pl
         gap: 0.4rem;
         margin: 0.55rem 0;
         color: #dcebc6;
-        font-size: 0.7rem;
+        font-size: 0.72rem;
       }
       .checks app-icon {
         color: var(--avocado-soft);
@@ -500,17 +589,21 @@ import { QuickTemplatesComponent } from '../../../plantillas/paginas/tarjetas-pl
           align-items: stretch;
           flex-direction: column;
         }
+        .consent-guidance { grid-template-columns: auto 1fr; }
+        .consent-guidance .button { grid-column: 1 / -1; justify-content: center; }
       }
     `,
   ],
 })
 export class CommunicationsComponent {
+  @ViewChild('archiveDialog') private archiveDialog?: ElementRef<HTMLDialogElement>;
   private readonly api = inject(ApiService);
   private readonly toast = inject(ToastService);
   readonly auth = inject(AuthService);
   readonly patientContext = inject(PatientContextService);
   readonly sending = signal(false);
-  readonly sendingWhatsApp = signal(false);
+  readonly sendingDocument = signal(false);
+  readonly savingConsent = signal(false);
   readonly deliveryConfirmed = signal(false);
   readonly deliveryAccepted = signal(false);
   readonly submitted = signal(false);
@@ -525,9 +618,11 @@ export class CommunicationsComponent {
     destination: string;
     canSendAutomatically: boolean;
   } | null>(null);
+  readonly archiveTarget = signal<{ id: string } | null>(null);
   private loadedPatientId = '';
   selectedPlanId = '';
   channel = 0;
+  consentAcknowledged = false;
   subject = 'Tu plan nutricional está listo';
   message =
     'Hola, revisamos tu plan y ya está disponible. Ábrelo desde el enlace seguro y escríbenos si tienes dudas.';
@@ -546,6 +641,10 @@ export class CommunicationsComponent {
     this.deliveryConfirmed.set(false);
     this.deliveryAccepted.set(false);
   }
+  channelChanged(): void {
+    this.clearPrepared();
+    this.consentAcknowledged = false;
+  }
   constructor() {
     effect(() => {
       const patientId = this.patientContext.selectedId();
@@ -553,6 +652,7 @@ export class CommunicationsComponent {
         this.preparedAction.set(null);
         this.deliveryConfirmed.set(false);
         this.deliveryAccepted.set(false);
+        this.consentAcknowledged = false;
         this.loadHistory(patientId);
         this.api.patient(patientId).subscribe({
           next: (patient) => this.contact.set(patient),
@@ -604,10 +704,11 @@ export class CommunicationsComponent {
       return;
     }
     if (!this.channelConsent()) {
+      document.querySelector<HTMLElement>('#consentGuidance .consent-check')?.focus();
       this.toast.show(
         'error',
         'Falta consentimiento',
-        'Regístralo en el expediente del paciente para este canal.',
+        'Confirma y registra la autorización en el bloque destacado.',
       );
       return;
     }
@@ -658,34 +759,75 @@ export class CommunicationsComponent {
       });
   }
 
-  sendWhatsAppDocument(dispatchId: string): void {
-    if (this.sendingWhatsApp() || !this.deliveryConfirmed() || this.deliveryAccepted()) return;
+  registerConsent(): void {
+    const patientId = this.patientContext.selectedId();
+    const patient = this.contact();
+    if (!patientId || !patient || this.savingConsent() || !this.consentAcknowledged) return;
+    if (!this.channelDestination()) {
+      this.toast.show('error', 'Falta el destino', 'Registra primero el correo o teléfono del paciente.');
+      return;
+    }
+
+    this.savingConsent.set(true);
+    this.api
+      .updatePatientConsents(patientId, {
+        emailConsent: this.channel === 0 ? true : patient.emailConsent,
+        whatsAppConsent: this.channel === 1 ? true : patient.whatsAppConsent,
+      })
+      .subscribe({
+        next: (updated) => {
+          this.savingConsent.set(false);
+          this.contact.set(updated);
+          this.consentAcknowledged = false;
+          this.toast.show(
+            'success',
+            'Autorización registrada',
+            `Ya puedes preparar el envío por ${this.channel === 0 ? 'correo' : 'WhatsApp'}.`,
+          );
+        },
+        error: (e) => {
+          this.savingConsent.set(false);
+          this.toast.show('error', 'No se registró la autorización', e.message);
+        },
+      });
+  }
+
+  sendPreparedDocument(dispatchId: string): void {
+    if (this.sendingDocument() || !this.deliveryConfirmed() || this.deliveryAccepted()) return;
     const patientId = this.patientContext.selectedId();
     if (!patientId) return;
-    this.sendingWhatsApp.set(true);
-    this.api.sendWhatsAppDocument(dispatchId).subscribe({
+    this.sendingDocument.set(true);
+    const request =
+      this.channel === 0
+        ? this.api.sendEmailDocument(dispatchId, { body: this.message })
+        : this.api.sendWhatsAppDocument(dispatchId);
+    request.subscribe({
       next: (response: any) => {
-        this.sendingWhatsApp.set(false);
+        this.sendingDocument.set(false);
         this.deliveryAccepted.set(true);
         this.loadHistory(patientId);
         this.toast.show(
           'success',
-          response.alreadySent ? 'PDF enviado anteriormente' : 'PDF aceptado por WhatsApp',
+          response.alreadySent
+            ? 'PDF enviado anteriormente'
+            : this.channel === 0
+              ? 'Correo aceptado'
+              : 'PDF aceptado por WhatsApp',
           response.notice,
         );
       },
       error: (e) => {
-        this.sendingWhatsApp.set(false);
+        this.sendingDocument.set(false);
         this.toast.show('error', 'No se envió el PDF', e.message);
       },
     });
   }
 
-  statusLabel(status: string): string {
+  statusLabel(status: string, channel: string): string {
     const labels: Record<string, string> = {
       Draft: 'Preparado',
       Queued: 'Confirmación pendiente',
-      Sent: 'Aceptado por WhatsApp',
+      Sent: channel === 'Email' ? 'Aceptado por correo' : 'Aceptado por WhatsApp',
       Failed: 'Rechazado',
       Delivered: 'Entregado',
       Read: 'Leído',
@@ -706,12 +848,24 @@ export class CommunicationsComponent {
     this.toast.show('success', 'Borrador guardado', 'Se conservará en este navegador.');
   }
 
-  archive(item: { id: string }): void {
-    if (!confirm('¿Archivar este registro de comunicación? Se conservará en auditoría.')) return;
+  confirmArchive(item: { id: string }): void {
+    this.archiveTarget.set(item);
+    this.archiveDialog?.nativeElement.showModal();
+  }
+
+  cancelArchive(): void {
+    this.archiveDialog?.nativeElement.close();
+    this.archiveTarget.set(null);
+  }
+
+  archive(): void {
+    const item = this.archiveTarget();
+    if (!item) return;
     const patientId = this.patientContext.selectedId();
     if (!patientId) return;
     this.api.archiveCommunication(item.id).subscribe({
       next: () => {
+        this.cancelArchive();
         this.loadHistory(patientId);
         this.toast.show('success', 'Comunicación archivada');
       },

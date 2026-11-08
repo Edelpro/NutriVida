@@ -36,6 +36,9 @@
             <app-icon name="shield" /><span>Auditoría</span>
           </a>
         }
+        <a routerLink="/cambiar-clave" routerLinkActive="active" (click)="menuOpen.set(false)">
+          <app-icon name="lock" /><span>Cambiar contraseña</span>
+        </a>
         <form class="sidebar-logout" novalidate (submit)="$event.preventDefault(); auth.logout()">
           <button class="sidebar-action" type="submit">
             <app-icon name="arrow" /><span>Cerrar sesión</span>

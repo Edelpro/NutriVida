@@ -7,9 +7,11 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
+using NutriVida.Api.Security;
 using NutriVida.Infrastructure.Persistence;
 using NutriVida.Infrastructure.Security;
 using NutriVida.Domain.Auditing;
+using NutriVida.Domain.Identity;
 
 namespace NutriVida.Api.Controllers.Auth;
 
@@ -17,6 +19,9 @@ namespace NutriVida.Api.Controllers.Auth;
 [Route("api/auth")]
 public sealed class AuthController(NutriVidaDbContext db, IConfiguration configuration) : ControllerBase
 {
+    private static readonly (string Hash, string Salt) UnknownUserCredentials =
+        PasswordHasher.Hash(Guid.NewGuid().ToString());
+
     [AllowAnonymous]
     [HttpPost("login")]
     [EnableRateLimiting("auth")]
@@ -25,38 +30,39 @@ public sealed class AuthController(NutriVidaDbContext db, IConfiguration configu
         var normalizedEmail = request.Email.Trim().ToLowerInvariant();
         var user = await db.ApplicationUsers.SingleOrDefaultAsync(
             x => x.Email == normalizedEmail && x.IsActive && !x.IsArchived, cancellationToken);
-        if (user is null || !PasswordHasher.Verify(request.Password, user.PasswordHash, user.PasswordSalt))
+        var now = DateTime.UtcNow;
+        // Se calcula siempre para que el tiempo de respuesta no revele si la cuenta existe.
+        var passwordMatches = user is null
+            ? PasswordHasher.Verify(request.Password, UnknownUserCredentials.Hash, UnknownUserCredentials.Salt) && false
+            : PasswordHasher.Verify(request.Password, user.PasswordHash, user.PasswordSalt);
+        if (user is null || LoginLockout.IsLocked(user, now) || !passwordMatches)
+        {
+            if (user is not null)
+            {
+                if (!LoginLockout.IsLocked(user, now)) LoginLockout.RegisterFailure(user, now);
+                db.AuditEvents.Add(new AuditEvent
+                {
+                    ClinicId = user.ClinicId,
+                    ActorUserId = user.Id,
+                    ActorEmail = user.Email,
+                    ActorRole = user.Role,
+                    Action = "AccesoFallido",
+                    EntityType = "ApplicationUser",
+                    EntityId = user.Id.ToString(),
+                    ChangedFields = string.Empty,
+                    CorrelationId = HttpContext.TraceIdentifier,
+                    OccurredAtUtc = now
+                });
+                await db.SaveChangesAsync(cancellationToken);
+            }
             return Unauthorized(new
             {
                 title = "No se pudo iniciar sesión",
-                detail = "El correo o la contraseña no son correctos."
+                detail = "El correo o la contraseña no son correctos. Tras varios intentos la cuenta se bloquea 15 minutos."
             });
+        }
 
-        var issuer = configuration["Authentication:Issuer"]
-            ?? throw new InvalidOperationException("Falta Authentication:Issuer.");
-        var audience = configuration["Authentication:Audience"]
-            ?? throw new InvalidOperationException("Falta Authentication:Audience.");
-        var signingKey = configuration["Authentication:SigningKey"]
-            ?? throw new InvalidOperationException("Falta Authentication:SigningKey.");
-        var expiresAtUtc = DateTime.UtcNow.AddHours(8);
-        var claims = new[]
-        {
-            new Claim(ClaimTypes.NameIdentifier, user.Id.ToString()),
-            new Claim(ClaimTypes.Name, user.FullName),
-            new Claim(ClaimTypes.Email, user.Email),
-            new Claim(ClaimTypes.Role, user.Role),
-            new Claim("clinic_id", user.ClinicId.ToString()),
-            new Claim("must_change_password", user.MustChangePassword ? "true" : "false")
-        };
-        var token = new JwtSecurityToken(
-            issuer,
-            audience,
-            claims,
-            expires: expiresAtUtc,
-            signingCredentials: new SigningCredentials(
-                new SymmetricSecurityKey(Encoding.UTF8.GetBytes(signingKey)),
-                SecurityAlgorithms.HmacSha256));
-
+        LoginLockout.Clear(user);
         user.LastLoginAtUtc = DateTime.UtcNow;
         db.AuditEvents.Add(new AuditEvent
         {
@@ -73,19 +79,7 @@ public sealed class AuthController(NutriVidaDbContext db, IConfiguration configu
         });
         await db.SaveChangesAsync(cancellationToken);
 
-        return Ok(new
-        {
-            accessToken = new JwtSecurityTokenHandler().WriteToken(token),
-            expiresAtUtc,
-            user = new
-            {
-                user.Id,
-                user.FullName,
-                user.Email,
-                user.Role,
-                user.MustChangePassword
-            }
-        });
+        return Ok(CreateSession(user));
     }
 
     [HttpGet("me")]
@@ -129,7 +123,51 @@ public sealed class AuthController(NutriVidaDbContext db, IConfiguration configu
         user.PasswordSalt = credentials.Salt;
         user.MustChangePassword = false;
         await db.SaveChangesAsync(cancellationToken);
-        return NoContent();
+        // El token anterior queda revocado al cambiar la credencial: se entrega uno nuevo.
+        return Ok(CreateSession(user));
+    }
+
+    private object CreateSession(ApplicationUser user)
+    {
+        var issuer = configuration["Authentication:Issuer"]
+            ?? throw new InvalidOperationException("Falta Authentication:Issuer.");
+        var audience = configuration["Authentication:Audience"]
+            ?? throw new InvalidOperationException("Falta Authentication:Audience.");
+        var signingKey = configuration["Authentication:SigningKey"]
+            ?? throw new InvalidOperationException("Falta Authentication:SigningKey.");
+        var expiresAtUtc = DateTime.UtcNow.AddHours(8);
+        var claims = new[]
+        {
+            new Claim(ClaimTypes.NameIdentifier, user.Id.ToString()),
+            new Claim(ClaimTypes.Name, user.FullName),
+            new Claim(ClaimTypes.Email, user.Email),
+            new Claim(ClaimTypes.Role, user.Role),
+            new Claim("clinic_id", user.ClinicId.ToString()),
+            new Claim(SessionValidation.MustChangePasswordClaim, user.MustChangePassword ? "true" : "false"),
+            new Claim(SessionValidation.StampClaim, PasswordHasher.SessionStamp(user.PasswordSalt))
+        };
+        var token = new JwtSecurityToken(
+            issuer,
+            audience,
+            claims,
+            expires: expiresAtUtc,
+            signingCredentials: new SigningCredentials(
+                new SymmetricSecurityKey(Encoding.UTF8.GetBytes(signingKey)),
+                SecurityAlgorithms.HmacSha256));
+
+        return new
+        {
+            accessToken = new JwtSecurityTokenHandler().WriteToken(token),
+            expiresAtUtc,
+            user = new
+            {
+                user.Id,
+                user.FullName,
+                user.Email,
+                user.Role,
+                user.MustChangePassword
+            }
+        };
     }
 }
 

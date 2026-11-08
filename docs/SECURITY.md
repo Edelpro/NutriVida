@@ -5,7 +5,7 @@ Los datos de salud son sensibles conforme a la Ley Orgánica de Protección de D
 ## Decisiones implementadas
 
 - Denegación por defecto en producción.
-- Autenticación JWT con expiración de ocho horas y validación de emisor, audiencia, firma y vigencia.
+- Autenticación JWT con expiración de ocho horas y validación de emisor, audiencia, firma y vigencia. Cada solicitud comprueba además en SQL Server que la cuenta siga activa y que la contraseña sea la misma: desactivar una cuenta o cambiar su contraseña revoca sus tokens al instante.
 - Contraseñas locales derivadas con PBKDF2-SHA256, sal aleatoria y comparación en tiempo constante.
 - Roles únicos de la aplicación personal: `Nutritionist` y `ClinicAdmin`.
 - Existe una sola cuenta `ClinicAdmin`, protegida contra cambio de rol o desactivación. Toda cuenta nueva se crea como `Nutritionist`.
@@ -18,7 +18,9 @@ Los datos de salud son sensibles conforme a la Ley Orgánica de Protección de D
 - Un administrador no puede desactivar su propia cuenta, quitarse su propio rol ni dejar la clínica sin otro administrador activo.
 - Autorización en servidor; la interfaz solo refleja permisos.
 - Registros clínicos archivables, no eliminables de forma definitiva.
-- Bitácora para creación, modificación, aprobación, generación y envío.
+- Bitácora para creación, modificación, aprobación, generación y envío, y también para accesos fallidos y consultas de expedientes y reportes. Una consulta repetida del mismo expediente se registra una vez cada 30 minutos.
+- La cuenta se bloquea 15 minutos tras 5 contraseñas incorrectas. Login y solicitud de acceso no revelan qué correos existen.
+- Lo que recibe el paciente solo incluye planes y diagnósticos aprobados y omite notas clínicas, antecedentes, medicación y laboratorios.
 - Bitácora de aplicación append-only: no tiene rutas para modificar o eliminar eventos, registra actor, entidad, acción, campos y correlación, y excluye hashes/sales de contraseña. Una política de retención y protección a nivel SQL debe aprobarse antes de producción.
 - Aislamiento por `clinic_id` y por profesional responsable en todos los recorridos de pacientes y sus registros clínicos. Un expediente ajeno responde como no encontrado para evitar enumeración por URL.
 - Límite de intentos de acceso y límite global de solicitudes para reducir abuso automatizado.
@@ -27,6 +29,7 @@ Los datos de salud son sensibles conforme a la Ley Orgánica de Protección de D
 - Correo y WhatsApp requieren consentimiento vigente. El envío directo por WhatsApp exige confirmación explícita del profesional, carga el PDF a Meta mediante HTTPS y bloquea repeticiones de un registro aceptado o incierto.
 - Los estados de WhatsApp recibidos por webhook se aceptan únicamente después de validar `X-Hub-Signature-256` con el App Secret.
 - La mensajería no incluye el expediente completo en el texto abierto.
+- El enlace público del PDF deja de funcionar al retirar el consentimiento del canal, y cada descarga queda en la bitácora.
 
 ## Decisiones que debe aprobar el cliente antes de producción
 
@@ -34,7 +37,7 @@ Los datos de salud son sensibles conforme a la Ley Orgánica de Protección de D
 - Política de conservación, anonimización y eliminación.
 - Responsables y encargados del tratamiento.
 - Revisión final de permisos del administrador para el entorno productivo.
-- Tiempo de expiración y mecanismo de acceso a reportes.
+- Tiempo de expiración del enlace a reportes (`Messaging:SharedLinkDays`, por defecto 7 días) y si se usa enlace o solo adjunto.
 - Proveedor, región y contrato de alojamiento.
 - Respuesta a incidentes y periodicidad de copias de seguridad.
 

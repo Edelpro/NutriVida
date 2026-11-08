@@ -2,6 +2,7 @@ import { Component, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { IconComponent } from '../../../../compartido/icono/icon.component';
 import { ToastService } from '../../../../compartido/notificaciones/toast.service';
+import { ApiService, ClinicSettings, MessagingIntegrationStatus } from '../../../../nucleo/api.service';
 @Component({
   selector: 'app-settings',
   imports: [FormsModule, IconComponent],
@@ -11,10 +12,12 @@ import { ToastService } from '../../../../compartido/notificaciones/toast.servic
         <p class="eyebrow">Administración</p>
         <h1>Configuración</h1>
         <p class="lede">
-          Datos del consultorio, criterios predeterminados y preparación de integraciones.
+          Datos del consultorio, criterios predeterminados y estado de las integraciones.
         </p>
       </div>
-      <button class="button button-primary" type="button" (click)="save()">Guardar cambios</button>
+      <button class="button button-primary" type="button" [disabled]="saving() || !loaded()" (click)="save()">
+        {{ saving() ? 'Guardando…' : 'Guardar cambios' }}
+      </button>
     </header>
     <div class="settings-layout">
       <nav class="settings-nav" aria-label="Secciones de configuración">
@@ -27,19 +30,19 @@ import { ToastService } from '../../../../compartido/notificaciones/toast.servic
           <div class="surface-body form-grid">
             <div class="field col-6">
               <label for="practiceName">Nombre</label
-              ><input id="practiceName" [(ngModel)]="practiceName" /><small
-                >Visible en reportes y mensajes.</small
+              ><input id="practiceName" name="practiceName" maxlength="160" [(ngModel)]="form.practiceName" /><small
+                >Aparece en el encabezado de los reportes PDF.</small
               >
             </div>
             <div class="field col-6">
               <label for="timezone">Zona horaria</label
-              ><select id="timezone">
+              ><select id="timezone" disabled>
                 <option>America/Guayaquil (UTC−5)</option></select
               ><small>Base para agenda y auditoría.</small>
             </div>
             <div class="field col-12">
               <label for="address">Dirección</label
-              ><input id="address" value="Quito, Ecuador" /><small>&nbsp;</small>
+              ><input id="address" name="address" maxlength="300" [(ngModel)]="form.address" /><small>&nbsp;</small>
             </div>
           </div>
         </section>
@@ -48,15 +51,15 @@ import { ToastService } from '../../../../compartido/notificaciones/toast.servic
           <div class="surface-body form-grid">
             <div class="field col-6">
               <label for="defaultFormula">Fórmula predeterminada</label
-              ><select id="defaultFormula">
-                <option>Mifflin–St Jeor</option>
-                <option>Harris–Benedict revisada</option></select
-              ><small>Siempre puede cambiarse por evaluación.</small>
+              ><select id="defaultFormula" name="defaultFormula" [(ngModel)]="form.defaultFormula">
+                <option [ngValue]="0">Mifflin–St Jeor</option>
+                <option [ngValue]="1">Harris–Benedict revisada</option></select
+              ><small>Valor inicial; puede cambiarse en cada cálculo.</small>
             </div>
             <div class="field col-6">
               <label for="etaDefault">ETA predeterminado</label
-              ><input id="etaDefault" type="number" value="10" min="0" max="30" /><small
-                >Porcentaje editable; no se aplica ocultamente.</small
+              ><input id="etaDefault" name="etaDefault" type="number" min="0" max="30" [(ngModel)]="etaPercent" /><small
+                >Valor inicial; puede cambiarse en cada cálculo.</small
               >
             </div>
             <div class="col-12 notice">
@@ -70,16 +73,37 @@ import { ToastService } from '../../../../compartido/notificaciones/toast.servic
           <div class="surface-body integrations">
             <div>
               <span class="integration-icon"><app-icon name="mail" /></span>
-              <p><strong>Correo transaccional</strong><small>Proveedor no configurado</small></p>
-              <span class="badge badge-warning">Pendiente</span>
+              <p>
+                <strong>Correo transaccional</strong
+                ><small>{{
+                  integrationStatus()?.email?.configured
+                    ? 'SMTP configurado para envío de PDF'
+                    : 'SMTP no configurado; se mantiene el enlace manual'
+                }}</small>
+              </p>
+              <span
+                class="badge"
+                [class.badge-warning]="!integrationStatus()?.email?.configured"
+                >{{ integrationStatus()?.email?.configured ? 'Disponible' : 'Pendiente' }}</span
+              >
             </div>
             <div>
               <span class="integration-icon"><app-icon name="phone" /></span>
               <p>
                 <strong>WhatsApp Business</strong
-                ><small>Proveedor y plantillas no configurados</small>
+                ><small>{{
+                  integrationStatus()?.whatsApp?.configured
+                    ? 'WhatsApp Cloud configurado para envío de PDF'
+                    : 'WhatsApp Cloud no configurado; se mantiene el enlace manual'
+                }}</small>
               </p>
-              <span class="badge badge-warning">Pendiente</span>
+              <span
+                class="badge"
+                [class.badge-warning]="!integrationStatus()?.whatsApp?.configured"
+                >{{
+                  integrationStatus()?.whatsApp?.configured ? 'Disponible' : 'Pendiente'
+                }}</span
+              >
             </div>
             <div>
               <span class="integration-icon"><app-icon name="food" /></span>
@@ -96,15 +120,15 @@ import { ToastService } from '../../../../compartido/notificaciones/toast.servic
           <div class="surface-body">
             <div class="notice">
               <app-icon name="info" /><span
-                >Desarrollo usa una identidad local controlada. Producción exige proveedor JWT,
-                roles, secretos externos, HTTPS y revisión LOPDP antes del despliegue.</span
+                >Antes de atender pacientes reales falta configurar el servidor seguro y completar la
+                revisión legal de protección de datos (LOPDP).</span
               >
             </div>
             <ul class="security-list">
-              <li><app-icon name="check" /> Archivado en lugar de borrado clínico</li>
-              <li><app-icon name="check" /> Control de concurrencia por versión</li>
-              <li><app-icon name="check" /> Consentimiento separado por canal</li>
-              <li><app-icon name="check" /> Destinos enmascarados en auditoría</li>
+              <li><app-icon name="check" /> Los registros clínicos se archivan, no se borran</li>
+              <li><app-icon name="check" /> Aviso si otra persona cambió el mismo paciente</li>
+              <li><app-icon name="check" /> Autorización separada para correo y WhatsApp</li>
+              <li><app-icon name="check" /> Correos y teléfonos parcialmente ocultos en el historial</li>
             </ul>
           </div>
         </section>
@@ -113,6 +137,11 @@ import { ToastService } from '../../../../compartido/notificaciones/toast.servic
   </div>`,
   styles: [
     `
+      input:disabled,
+      select:disabled {
+        color: var(--text-muted);
+        background: var(--surface-muted);
+      }
       .settings-layout {
         display: grid;
         grid-template-columns: 12rem minmax(0, 1fr);
@@ -178,7 +207,7 @@ import { ToastService } from '../../../../compartido/notificaciones/toast.servic
       .integrations small {
         margin-top: 0.2rem;
         color: var(--text-muted);
-        font-size: 0.7rem;
+        font-size: 0.72rem;
       }
       .security-list {
         margin: 1rem 0 0;
@@ -213,14 +242,47 @@ import { ToastService } from '../../../../compartido/notificaciones/toast.servic
   ],
 })
 export class SettingsComponent {
+  private readonly api = inject(ApiService);
   private readonly toast = inject(ToastService);
-  practiceName = 'NutriVida · Consulta nutricional';
+  form: ClinicSettings = { practiceName: '', address: '', defaultFormula: 0, defaultEtaPercent: 0.1 };
+  etaPercent = 10;
   readonly saving = signal(false);
+  readonly loaded = signal(false);
+  readonly integrationStatus = signal<MessagingIntegrationStatus | null>(null);
+  constructor() {
+    this.api.settings().subscribe({
+      next: (settings) => {
+        this.form = settings;
+        this.etaPercent = Math.round(settings.defaultEtaPercent * 100);
+        this.loaded.set(true);
+      },
+      error: (error: Error) => this.toast.show('error', 'No se cargó la configuración', error.message),
+    });
+    this.api.messagingIntegrationStatus().subscribe({
+      next: (status) => this.integrationStatus.set(status),
+      error: () => this.integrationStatus.set(null),
+    });
+  }
   save(): void {
-    this.toast.show(
-      'success',
-      'Configuración guardada',
-      'Los cambios de desarrollo se conservaron en esta sesión.',
-    );
+    if (this.form.practiceName.trim().length < 3) {
+      this.toast.show('error', 'Revisa el nombre', 'Escribe el nombre del consultorio.');
+      return;
+    }
+    if (!(this.etaPercent >= 0 && this.etaPercent <= 30)) {
+      this.toast.show('error', 'Revisa el ETA', 'Debe estar entre 0 % y 30 %.');
+      return;
+    }
+    this.saving.set(true);
+    this.api.saveSettings({ ...this.form, defaultEtaPercent: this.etaPercent / 100 }).subscribe({
+      next: (settings) => {
+        this.form = settings;
+        this.saving.set(false);
+        this.toast.show('success', 'Configuración guardada');
+      },
+      error: (error: Error) => {
+        this.saving.set(false);
+        this.toast.show('error', 'No se guardó la configuración', error.message);
+      },
+    });
   }
 }

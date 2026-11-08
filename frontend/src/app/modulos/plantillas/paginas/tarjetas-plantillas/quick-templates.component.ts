@@ -61,6 +61,26 @@ export class QuickTemplatesComponent implements OnInit {
         error: (error: Error) => this.error.set(error.message),
       });
   }
+  contentOf(template: QuickTemplate): { label: string; value: string }[] {
+    const rows: { label: string; value: string }[] = [];
+    for (const field of this.config().fields) {
+      const value = template.values[field.key];
+      if (!value) continue;
+      rows.push({
+        label: field.label,
+        value: field.options?.find((option) => option.value === value)?.label ?? value,
+      });
+    }
+    if (template.values['itemsJson']) {
+      try {
+        const items = JSON.parse(template.values['itemsJson']) as { foodNameSnapshot: string }[];
+        rows.push({ label: `Alimentos (${items.length})`, value: items.map((item) => item.foodNameSnapshot).join(', ') });
+      } catch {
+        rows.push({ label: 'Alimentos', value: 'No se pudieron leer' });
+      }
+    }
+    return rows;
+  }
   use(template: QuickTemplate): void {
     this.templateSelected.emit(template);
     this.toast.show(

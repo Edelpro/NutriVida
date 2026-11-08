@@ -3,6 +3,7 @@ using System.Text;
 using System.Threading.RateLimiting;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Diagnostics;
+using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore.Diagnostics;
@@ -35,6 +36,10 @@ builder.Services.AddScoped<IInterceptor>(provider => provider.GetRequiredService
 builder.Services.AddInfrastructure(builder.Configuration);
 builder.Services.AddScoped<IEnergyCalculator, EnergyCalculator>();
 builder.Services.AddScoped<IClinicalReportPdfService, ClinicalReportPdfService>();
+builder.Services.AddScoped<IClinicalReportDataService, ClinicalReportDataService>();
+builder.Services.Configure<SmtpEmailOptions>(
+    builder.Configuration.GetSection(SmtpEmailOptions.SectionName));
+builder.Services.AddSingleton<IEmailDocumentSender, SmtpEmailService>();
 builder.Services.Configure<WhatsAppCloudOptions>(
     builder.Configuration.GetSection(WhatsAppCloudOptions.SectionName));
 builder.Services.AddHttpClient<IWhatsAppDocumentSender, WhatsAppCloudService>(client =>
@@ -98,6 +103,17 @@ if (builder.Environment.IsProduction())
             throw new InvalidOperationException(
                 $"Faltan secretos de WhatsApp Cloud: {string.Join(", ", missingWhatsAppSettings)}.");
     }
+    if (builder.Configuration.GetValue<bool>($"{SmtpEmailOptions.SectionName}:Enabled"))
+    {
+        var requiredSmtpSettings = new[] { "Host", "Username", "Password", "FromEmail" };
+        var missingSmtpSettings = requiredSmtpSettings
+            .Where(name => string.IsNullOrWhiteSpace(
+                builder.Configuration[$"{SmtpEmailOptions.SectionName}:{name}"]))
+            .ToArray();
+        if (missingSmtpSettings.Length > 0)
+            throw new InvalidOperationException(
+                $"Faltan secretos de correo SMTP: {string.Join(", ", missingSmtpSettings)}.");
+    }
 }
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     .AddJwtBearer(options =>
@@ -115,11 +131,24 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
             NameClaimType = ClaimTypes.Name,
             RoleClaimType = ClaimTypes.Role
         };
+        options.Events = new JwtBearerEvents { OnTokenValidated = SessionValidation.OnTokenValidated };
     });
 builder.Services.AddAuthorization(options =>
     options.AddPolicy("ClinicalStaff", policy => policy.RequireRole("Nutritionist", "ClinicAdmin")));
 
 var app = builder.Build();
+// Detrás de un proxy o balanceador: sin esto, todos los usuarios cuentan como una sola IP
+// para los límites de acceso y HTTPS parece HTTP.
+if (builder.Configuration.GetValue<bool>("Security:TrustForwardedHeaders"))
+{
+    var forwarded = new ForwardedHeadersOptions
+    {
+        ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto
+    };
+    forwarded.KnownIPNetworks.Clear();
+    forwarded.KnownProxies.Clear();
+    app.UseForwardedHeaders(forwarded);
+}
 if (app.Environment.IsProduction())
 {
     app.UseHsts();
@@ -147,6 +176,23 @@ app.UseExceptionHandler(exceptionHandlerApp => exceptionHandlerApp.Run(async con
 }));
 app.UseMiddleware<CancelacionSolicitudMiddleware>();
 
+if (builder.Configuration.GetValue<bool>("Database:ApplyMigrationsOnStartup"))
+{
+    await using var scope = app.Services.CreateAsyncScope();
+    var db = scope.ServiceProvider.GetRequiredService<NutriVidaDbContext>();
+    await db.Database.MigrateAsync();
+    var adminEmail = builder.Configuration["Bootstrap:AdminEmail"];
+    var adminPassword = builder.Configuration["Bootstrap:AdminPassword"];
+    if (!string.IsNullOrWhiteSpace(adminEmail) && !string.IsNullOrWhiteSpace(adminPassword))
+    {
+        if (adminPassword.Length < 12)
+            throw new InvalidOperationException("Bootstrap:AdminPassword debe tener al menos 12 caracteres.");
+        await DatabaseSeeder.BootstrapAdministratorAsync(db,
+            builder.Configuration["Bootstrap:AdminName"] ?? "Administración",
+            adminEmail, adminPassword);
+    }
+}
+
 if (app.Environment.IsDevelopment())
 {
     app.MapOpenApi();
@@ -167,13 +213,14 @@ if (app.Environment.IsDevelopment())
 }
 
 app.UseCors("Angular");
-app.UseRateLimiter();
 app.UseStaticFiles();
 app.UseAuthentication();
+// Después de autenticar: el límite global cuenta por usuario y no por IP compartida.
+app.UseRateLimiter();
 app.Use(async (context, next) =>
 {
     var requiresChange = string.Equals(
-        context.User.FindFirstValue("must_change_password"), "true", StringComparison.OrdinalIgnoreCase);
+        context.User.FindFirstValue(SessionValidation.MustChangePasswordClaim), "true", StringComparison.OrdinalIgnoreCase);
     var passwordRoute = context.Request.Path.StartsWithSegments("/api/auth/change-password")
         || context.Request.Path.StartsWithSegments("/api/auth/me");
     if (context.User.Identity?.IsAuthenticated == true && requiresChange && !passwordRoute)
@@ -191,6 +238,10 @@ app.Use(async (context, next) =>
 });
 app.UseAuthorization();
 app.MapGet("/health", () => Results.Ok(new { status = "healthy", service = "NutriVida.Api" })).AllowAnonymous();
+app.MapGet("/health/ready", async (NutriVidaDbContext db, CancellationToken cancellationToken) =>
+    await db.Database.CanConnectAsync(cancellationToken)
+        ? Results.Ok(new { status = "ready" })
+        : Results.StatusCode(StatusCodes.Status503ServiceUnavailable)).AllowAnonymous();
 app.MapControllers().RequireAuthorization("ClinicalStaff");
 app.Run();
 

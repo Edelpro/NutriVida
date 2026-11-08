@@ -3,6 +3,7 @@ import { Injectable, inject } from '@angular/core';
 import { Observable, catchError, throwError } from 'rxjs';
 import { API_BASE_URL } from './configuracion/api.tokens';
 import { apiErrorMessage } from './http/api-error';
+import { MeasureKey } from '../modulos/antropometria/modelos/anthropometry-fields';
 
 export interface Patient {
   id: string;
@@ -35,6 +36,7 @@ export interface Food {
   id: string;
   name: string;
   group: string;
+  exchangeGroup: string;
   portionGrams: number;
   householdMeasure: string;
   energyKcal: number;
@@ -131,6 +133,13 @@ export interface AssessmentRecord {
   bristolStoolType: number | null;
   bowelFrequency: string;
   clinicalNotes: string;
+  medicalHistory: string;
+  familyHistory: string;
+  medications: string;
+  supplements: string;
+  labResults: string;
+  reproductiveStatus: string;
+  recall24hJson: string;
 }
 export interface DiagnosisRecord {
   id: string;
@@ -143,6 +152,8 @@ export interface DiagnosisRecord {
   status: number | string;
   professionalName: string;
   createdAtUtc: string;
+  approvedAtUtc: string | null;
+  approvedByName: string;
 }
 export interface EnergyRecord {
   id: string;
@@ -158,16 +169,21 @@ export interface EnergyRecord {
   restingEnergyKcal: number;
   totalEnergyKcal: number;
   createdAtUtc: string;
+  calculatedByName: string;
 }
-export interface AnthropometrySummary {
+export type AnthropometrySummary = Partial<Record<MeasureKey, number | null>> & {
   id: string;
   patientId: string;
   weightKg: number;
   heightCm: number;
   waistCm: number | null;
+  hipCm: number | null;
   bodyFatPercent: number | null;
   measuredAtUtc: string;
-}
+  notes: string;
+  edemaGrade: string;
+  ascitesGrade: string;
+};
 export interface MenuPlanSummary {
   id: string;
   patientId: string;
@@ -177,6 +193,8 @@ export interface MenuPlanSummary {
   energyTargetKcal: number;
   professionalNotes: string;
   status: number;
+  approvedAtUtc: string | null;
+  approvedByName: string;
   items: {
     id: string;
     foodItemId: string | null;
@@ -188,6 +206,16 @@ export interface MenuPlanSummary {
     energyKcal: number;
     householdMeasure: string;
   }[];
+}
+export interface ClinicSettings {
+  practiceName: string;
+  address: string;
+  defaultFormula: number;
+  defaultEtaPercent: number;
+}
+export interface MessagingIntegrationStatus {
+  email: { configured: boolean; mode: string };
+  whatsApp: { configured: boolean; mode: string };
 }
 
 @Injectable({ providedIn: 'root' })
@@ -215,6 +243,14 @@ export class ApiService {
   updatePatient(id: string, body: unknown): Observable<PatientDetails> {
     return this.http
       .put<PatientDetails>(`${this.base}/patients/${id}`, body)
+      .pipe(catchError(this.handle));
+  }
+  updatePatientConsents(
+    id: string,
+    body: { emailConsent: boolean; whatsAppConsent: boolean },
+  ): Observable<PatientDetails> {
+    return this.http
+      .put<PatientDetails>(`${this.base}/patients/${id}/consents`, body)
       .pipe(catchError(this.handle));
   }
   archivePatient(id: string): Observable<void> {
@@ -247,6 +283,26 @@ export class ApiService {
       .get<AnthropometrySummary | null>(`${this.base}/patients/${patientId}/anthropometry/latest`)
       .pipe(catchError(this.handle));
   }
+  anthropometry(patientId: string): Observable<AnthropometrySummary[]> {
+    return this.http
+      .get<AnthropometrySummary[]>(`${this.base}/patients/${patientId}/anthropometry`)
+      .pipe(catchError(this.handle));
+  }
+  saveAnthropometry(patientId: string, body: unknown): Observable<AnthropometrySummary> {
+    return this.http
+      .post<AnthropometrySummary>(`${this.base}/patients/${patientId}/anthropometry`, body)
+      .pipe(catchError(this.handle));
+  }
+  updateAnthropometry(patientId: string, id: string, body: unknown): Observable<AnthropometrySummary> {
+    return this.http
+      .put<AnthropometrySummary>(`${this.base}/patients/${patientId}/anthropometry/${id}`, body)
+      .pipe(catchError(this.handle));
+  }
+  archiveAnthropometry(patientId: string, id: string): Observable<void> {
+    return this.http
+      .post<void>(`${this.base}/patients/${patientId}/anthropometry/${id}/archive`, {})
+      .pipe(catchError(this.handle));
+  }
   saveDiagnosis(patientId: string, body: unknown): Observable<unknown> {
     return this.http
       .post(`${this.base}/patients/${patientId}/diagnoses`, body)
@@ -256,6 +312,22 @@ export class ApiService {
     return this.http
       .get<DiagnosisRecord[]>(`${this.base}/patients/${patientId}/diagnoses`)
       .pipe(catchError(this.handle));
+  }
+  archiveDiagnosis(patientId: string, id: string): Observable<void> {
+    return this.http
+      .post<void>(`${this.base}/patients/${patientId}/diagnoses/${id}/archive`, {})
+      .pipe(catchError(this.handle));
+  }
+  approveDiagnosis(patientId: string, id: string): Observable<DiagnosisRecord> {
+    return this.http
+      .post<DiagnosisRecord>(`${this.base}/patients/${patientId}/diagnoses/${id}/approve`, {})
+      .pipe(catchError(this.handle));
+  }
+  settings(): Observable<ClinicSettings> {
+    return this.http.get<ClinicSettings>(`${this.base}/settings`).pipe(catchError(this.handle));
+  }
+  saveSettings(body: ClinicSettings): Observable<ClinicSettings> {
+    return this.http.put<ClinicSettings>(`${this.base}/settings`, body).pipe(catchError(this.handle));
   }
   updateDiagnosis(patientId: string, id: string, body: unknown): Observable<DiagnosisRecord> {
     return this.http
@@ -282,10 +354,22 @@ export class ApiService {
       .post<void>(`${this.base}/energy/${id}/archive`, {})
       .pipe(catchError(this.handle));
   }
-  foods(q = ''): Observable<{ items: Food[]; notice: string }> {
+  foods(
+    q = '',
+    page = 1,
+    source: number | null = null,
+  ): Observable<{ items: Food[]; total: number; totalPages: number; notice: string }> {
+    let params = new HttpParams().set('q', q).set('page', page);
+    if (source !== null) params = params.set('source', source);
     return this.http
-      .get<{ items: Food[]; notice: string }>(`${this.base}/foods`, { params: { q } })
+      .get<{ items: Food[]; total: number; totalPages: number; notice: string }>(
+        `${this.base}/foods`,
+        { params },
+      )
       .pipe(catchError(this.handle));
+  }
+  foodOptions(): Observable<Food[]> {
+    return this.http.get<Food[]>(`${this.base}/foods/options`).pipe(catchError(this.handle));
   }
   createFood(body: SavePersonalizedFood): Observable<Food> {
     return this.http.post<Food>(`${this.base}/foods`, body).pipe(catchError(this.handle));
@@ -353,6 +437,9 @@ export class ApiService {
   updateMenuPlan(id: string, body: unknown): Observable<unknown> {
     return this.http.put(`${this.base}/menu-plans/${id}`, body).pipe(catchError(this.handle));
   }
+  approveMenuPlan(id: string): Observable<unknown> {
+    return this.http.post(`${this.base}/menu-plans/${id}/approve`, {}).pipe(catchError(this.handle));
+  }
   archiveMenuPlan(id: string): Observable<void> {
     return this.http
       .post<void>(`${this.base}/menu-plans/${id}/archive`, {})
@@ -381,6 +468,16 @@ export class ApiService {
   previewMessage(body: unknown): Observable<unknown> {
     return this.http
       .post(`${this.base}/communications/preview`, body)
+      .pipe(catchError(this.handle));
+  }
+  messagingIntegrationStatus(): Observable<MessagingIntegrationStatus> {
+    return this.http
+      .get<MessagingIntegrationStatus>(`${this.base}/communications/integration-status`)
+      .pipe(catchError(this.handle));
+  }
+  sendEmailDocument(dispatchId: string, body: { body: string }): Observable<unknown> {
+    return this.http
+      .post(`${this.base}/communications/${dispatchId}/send-email-document`, body)
       .pipe(catchError(this.handle));
   }
   sendWhatsAppDocument(dispatchId: string): Observable<unknown> {

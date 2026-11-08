@@ -1,4 +1,4 @@
-import { DecimalPipe } from '@angular/common';
+import { DatePipe, DecimalPipe } from '@angular/common';
 import { Component, computed, effect, inject, signal } from '@angular/core';
 import { FormsModule, NgForm } from '@angular/forms';
 import { ApiService } from '../../../../nucleo/api.service';
@@ -50,6 +50,7 @@ export function addDaysToIsoDate(dateValue: string, days: number): string {
   selector: 'app-follow-ups',
   imports: [
     FormsModule,
+    DatePipe,
     DecimalPipe,
     IconComponent,
     PatientContextBarComponent,
@@ -65,7 +66,6 @@ export function addDaysToIsoDate(dateValue: string, days: number): string {
           Registra cada control según la frecuencia clínica acordada y compara la evolución.
         </p>
       </div>
-      <span class="badge">Intervalo flexible</span>
     </header>
     <app-flujo-plan-nutricional [currentStep]="4" />
     <app-patient-context-bar />
@@ -288,7 +288,11 @@ export function addDaysToIsoDate(dateValue: string, days: number): string {
       <aside class="trend">
         <p class="eyebrow">Tendencia reciente</p>
         <strong class="trend-value">{{ weightChangeLabel() }} <em>kg</em></strong>
-        <p>en los últimos cuatro controles con peso</p>
+        <p>
+          {{ bars().length < 2
+            ? 'Hacen falta dos controles con peso para ver el cambio.'
+            : 'en los últimos cuatro controles con peso' }}
+        </p>
         <div class="bars" [attr.aria-label]="trendAriaLabel()">
           @for (bar of bars(); track bar.label) {
             <span [style.height.%]="bar.height"
@@ -329,14 +333,14 @@ export function addDaysToIsoDate(dateValue: string, days: number): string {
           <tbody>
             @for (row of history(); track row.id) {
               <tr>
-                <td>{{ row.followUpDate }}</td>
+                <td>{{ row.followUpDate | date: 'dd MMM y' : '' : 'es-EC' }}</td>
                 <td>{{ periodLabel(row) }}</td>
                 <td>{{ row.weightKg === null ? '—' : (row.weightKg | number: '1.1-1') + ' kg' }}</td>
                 <td>
                   <span class="badge">{{ row.planAdherencePercent === null ? '—' : row.planAdherencePercent + '%' }}</span>
                 </td>
                 <td><span class="status-pill" [attr.data-status]="row.objectiveStatus">{{ objectiveStatusLabel(row.objectiveStatus) }}</span></td>
-                <td>{{ row.nextAppointmentOn || 'Sin programar' }}</td>
+                <td>{{ row.nextAppointmentOn ? (row.nextAppointmentOn | date: 'dd MMM y' : '' : 'es-EC') : 'Sin programar' }}</td>
                 <td><div class="toolbar">
                   <button class="button button-secondary button-small" type="button" (click)="edit(row)">Editar</button>
                   @if (auth.hasRole('ClinicAdmin')) {
@@ -392,6 +396,13 @@ export function addDaysToIsoDate(dateValue: string, days: number): string {
         border-bottom: 1px solid color-mix(in srgb, var(--primary), transparent 82%);
         font: 700 0.88rem var(--font-display);
       }
+      @media (min-width: 901px) {
+        .trend {
+          position: sticky;
+          top: 1rem;
+          align-self: start;
+        }
+      }
       .trend {
         padding: 1.3rem;
         color: white;
@@ -431,12 +442,12 @@ export function addDaysToIsoDate(dateValue: string, days: number): string {
         color: var(--primary-dark);
       }
       .bars b {
-        font-size: 0.65rem;
+        font-size: 0.72rem;
       }
       .bars small {
         padding: 0.25rem 0;
         color: var(--primary-dark);
-        font-size: 0.6rem;
+        font-size: 0.72rem;
       }
       .trend-note {
         display: grid;
@@ -460,7 +471,7 @@ export function addDaysToIsoDate(dateValue: string, days: number): string {
         border-radius: 999px;
         color: var(--text-muted);
         background: var(--surface-muted);
-        font-size: 0.7rem;
+        font-size: 0.72rem;
         font-weight: 750;
         white-space: nowrap;
       }
@@ -530,13 +541,12 @@ export class FollowUpsComponent {
       .slice(0, 4)
       .reverse();
     const values = rows.map((row) => Number(row.weightKg));
-    const min = Math.min(...values);
     const max = Math.max(...values);
-    const range = max - min;
-    return rows.map((row, index) => ({
-      label: `C${index + 1}`,
+    // La altura parte de cero: un eje recortado haría parecer enorme un cambio pequeño.
+    return rows.map((row) => ({
+      label: this.shortDate(row.followUpDate).slice(0, 5),
       value: Number(row.weightKg).toFixed(1),
-      height: range ? 35 + ((Number(row.weightKg) - min) / range) * 60 : 65,
+      height: (Number(row.weightKg) / max) * 90,
     }));
   });
   model = {
@@ -557,16 +567,29 @@ export class FollowUpsComponent {
     professionalNotes: '',
   };
   aplicarPlantilla(plantilla: QuickTemplate): void {
-    if (this.model.professionalNotes.trim()) {
-      this.toast.show(
-        'success',
-        'Nota conservada',
-        'Ya había contenido y no fue reemplazado. Puedes copiar lo necesario manualmente.',
-      );
-      return;
+    const modelo = this.model as Record<string, unknown>;
+    const numericos = ['exerciseMinutes', 'averageSleepHours', 'planAdherencePercent', 'bristolStoolType', 'objectiveStatus', 'followUpIntervalDays'];
+    let completados = 0;
+    let conservados = 0;
+    for (const [campo, valor] of Object.entries(plantilla.values)) {
+      if (!valor) continue;
+      const actual = modelo[campo];
+      const vacio =
+        actual === '' || actual === null || actual === undefined || (campo === 'objectiveStatus' && actual === 0);
+      if (!vacio) {
+        conservados += 1;
+        continue;
+      }
+      modelo[campo] = numericos.includes(campo) ? Number(valor) : valor;
+      completados += 1;
     }
-    this.model.professionalNotes = plantilla.values['professionalNotes'] ?? '';
-    this.toast.show('success', 'Plantilla aplicada', 'Completa y revisa la nota antes de guardar.');
+    this.toast.show(
+      'success',
+      'Plantilla aplicada',
+      conservados
+        ? `Se completaron ${completados} campos y se conservaron ${conservados} que ya tenían datos.`
+        : `Se completaron ${completados} campos. Revísalos antes de guardar.`,
+    );
   }
   constructor() {
     effect(() => {
@@ -718,9 +741,14 @@ export class FollowUpsComponent {
     this.updateNextAppointment();
   }
 
+  private shortDate(value: string): string {
+    const [year, month, day] = value.split('-');
+    return `${day}/${month}/${year}`;
+  }
+
   periodLabel(row: FollowUpRow): string {
     return row.periodStartsOn && row.periodEndsOn
-      ? `${row.periodStartsOn} a ${row.periodEndsOn}`
+      ? `${this.shortDate(row.periodStartsOn)} a ${this.shortDate(row.periodEndsOn)}`
       : 'Sin período definido';
   }
 

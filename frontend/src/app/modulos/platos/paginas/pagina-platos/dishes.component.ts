@@ -17,6 +17,8 @@ import { IconComponent } from '../../../../compartido/icono/icon.component';
 import { FlujoPlanNutricionalComponent } from '../../../../compartido/flujo-plan-nutricional/flujo-plan-nutricional.component';
 import { ToastService } from '../../../../compartido/notificaciones/toast.service';
 import { ApiService, Food } from '../../../../nucleo/api.service';
+import { toLocalIsoDate } from '../../../../nucleo/fechas';
+import { FOOD_OPTION_LIMIT, filterFoods, withSelectedFood } from '../../../../nucleo/food-options';
 import { AuthService } from '../../../../nucleo/autenticacion/auth.service';
 import { DishesApiService } from '../../acceso-datos/dishes-api.service';
 import { Dish, DishIngredientRequest, DishRequest } from '../../modelos/dish.models';
@@ -48,6 +50,8 @@ export class DishesComponent {
 
   readonly dishes = signal<Dish[]>([]);
   readonly foods = signal<Food[]>([]);
+  readonly foodFilter = signal('');
+  readonly visibleFoods = computed(() => filterFoods(this.foods(), this.foodFilter()));
   readonly loading = signal(false);
   readonly saving = signal(false);
   readonly error = signal('');
@@ -66,6 +70,7 @@ export class DishesComponent {
     return embed ? this.sanitizer.bypassSecurityTrustResourceUrl(embed) : null;
   });
 
+  readonly foodOptionLimit = FOOD_OPTION_LIMIT;
   query = '';
   mealFilter = '';
   maxCost = '';
@@ -74,10 +79,10 @@ export class DishesComponent {
   constructor() {
     this.load();
     this.foodApi
-      .foods()
+      .foodOptions()
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
-        next: (result) => this.foods.set(result.items),
+        next: (foods) => this.foods.set(foods),
         error: (error: Error) => this.toast.show('error', 'No se cargó el catálogo', error.message),
       });
   }
@@ -303,6 +308,9 @@ export class DishesComponent {
     this.submitted.set(false);
     this.formError.set('');
   }
+  foodOptions(selectedId: string): Food[] {
+    return withSelectedFood(this.visibleFoods(), this.foods(), selectedId);
+  }
   food(row: DishIngredientRequest): Food | undefined {
     return this.foods().find((x) => x.id === row.foodItemId);
   }
@@ -331,7 +339,7 @@ export class DishesComponent {
       mealName: 'Almuerzo',
       servings: 4,
       preparationMinutes: 30,
-      costReferenceDate: new Date().toISOString().slice(0, 10),
+      costReferenceDate: toLocalIsoDate(),
       instructions: '',
       costNotes: '',
       imageUrl: '',

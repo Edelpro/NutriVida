@@ -10,7 +10,10 @@ namespace NutriVida.Api.Controllers.Reports;
 
 [ApiController]
 [Route("api/reports")]
-public sealed class ReportsController(NutriVidaDbContext db, IClinicalReportPdfService pdfService) : ControllerBase
+public sealed class ReportsController(
+    NutriVidaDbContext db,
+    IClinicalReportPdfService pdfService,
+    IClinicalReportDataService reportData) : ControllerBase
 {
     [HttpGet("clinical-summary")]
     public async Task<IActionResult> Summary([FromQuery] Guid patientId, CancellationToken cancellationToken)
@@ -21,12 +24,14 @@ public sealed class ReportsController(NutriVidaDbContext db, IClinicalReportPdfS
         if (patient is null) return NotFound();
         var measures = await db.AnthropometricMeasurements.AsNoTracking().Where(x => x.PatientId == patientId && !x.IsArchived)
             .OrderBy(x => x.MeasuredAtUtc)
-            .Select(x => new { x.MeasuredAtUtc, x.WeightKg, x.HeightCm, x.WaistCm, x.BodyFatPercent })
+            .Select(x => new { x.MeasuredAtUtc, x.WeightKg, x.HeightCm, x.WaistCm, x.HipCm, x.BodyFatPercent })
             .ToListAsync(cancellationToken);
         var lastAssessment = await db.NutritionAssessments.AsNoTracking().Where(x => x.PatientId == patientId && !x.IsArchived)
             .OrderByDescending(x => x.RecordedAtUtc).FirstOrDefaultAsync(cancellationToken);
         var followUps = await db.WeeklyFollowUps.AsNoTracking().Where(x => x.PatientId == patientId && !x.IsArchived)
             .OrderByDescending(x => x.FollowUpDate).Take(8).ToListAsync(cancellationToken);
+        db.Record(HttpContext, clinicId, "ConsultarReporte", "PatientClinicalReport", patient.Id.ToString());
+        await db.SaveChangesAsync(cancellationToken);
         return Ok(new
         {
             patient = new { patient.Id, fullName = patient.FirstName + " " + patient.LastName, patient.Goal },
@@ -46,29 +51,11 @@ public sealed class ReportsController(NutriVidaDbContext db, IClinicalReportPdfS
             .SingleOrDefaultAsync(x => x.Id == patientId, cancellationToken);
         if (patient is null) return NotFound();
 
-        var measures = await db.AnthropometricMeasurements.AsNoTracking()
-            .Where(x => x.PatientId == patientId && !x.IsArchived)
-            .OrderBy(x => x.MeasuredAtUtc)
-            .Select(x => new ClinicalMeasurementPdfRow(x.MeasuredAtUtc, x.WeightKg, x.HeightCm, x.WaistCm, x.BodyFatPercent))
-            .ToListAsync(cancellationToken);
-        var assessment = await db.NutritionAssessments.AsNoTracking()
-            .Where(x => x.PatientId == patientId && !x.IsArchived)
-            .OrderByDescending(x => x.RecordedAtUtc)
-            .Select(x => new ClinicalAssessmentPdfRow(x.DailyIntake, x.Intolerances, x.Allergies,
-                x.SleepHours, x.ExerciseType, x.ExerciseMinutesPerWeek, x.HasConstipation, x.BristolStoolType, x.ClinicalNotes))
-            .FirstOrDefaultAsync(cancellationToken);
-        var followUps = await db.WeeklyFollowUps.AsNoTracking()
-            .Where(x => x.PatientId == patientId && !x.IsArchived)
-            .OrderByDescending(x => x.FollowUpDate)
-            .Take(8)
-            .Select(x => new ClinicalFollowUpPdfRow(x.FollowUpDate, x.WeightKg, x.AverageSleepHours,
-                x.ExerciseMinutes, x.ExerciseType, x.PlanAdherencePercent, x.BristolStoolType, x.Symptoms))
-            .ToListAsync(cancellationToken);
-
-        var generatedAt = DateTime.UtcNow;
-        var bytes = pdfService.Create(new ClinicalReportPdfData(
-            $"{patient.FirstName} {patient.LastName}", patient.DocumentNumber, patient.Goal,
-            generatedAt, measures, assessment, followUps));
+        var data = await reportData.BuildAsync(patient,
+            User.Identity?.Name ?? User.FindFirstValue(ClaimTypes.Email) ?? "NutriVida",
+            null, ClinicalReportAudience.Professional, cancellationToken);
+        var generatedAt = data.GeneratedAtUtc;
+        var bytes = pdfService.Create(data);
         db.AuditEvents.Add(new AuditEvent
         {
             ClinicId = clinicId,

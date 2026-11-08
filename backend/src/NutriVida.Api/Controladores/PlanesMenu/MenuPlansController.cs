@@ -38,28 +38,8 @@ public sealed class MenuPlansController(NutriVidaDbContext db) : ControllerBase
             return ValidationProblem("Selecciona un paciente válido.");
         if (!await db.CanAccessPatientAsync(User, request.PatientId, cancellationToken))
             return NotFound(new { title = "Paciente no encontrado", detail = "Actualiza la lista y selecciona nuevamente el expediente." });
-        if (request.Items.Count == 0)
-            return ValidationProblem("Añade al menos un alimento o plato al menú.");
-        if (request.StartsOn == default || request.EndsOn == default)
-            return ValidationProblem("Selecciona fechas válidas para el plan.");
-        if (request.EndsOn < request.StartsOn)
-            return ValidationProblem("La fecha final debe ser posterior a la inicial.");
-        if (request.Items.Any(x => string.IsNullOrWhiteSpace(x.MealName) || string.IsNullOrWhiteSpace(x.FoodNameSnapshot)))
-            return ValidationProblem("Cada alimento debe tener tiempo de comida y nombre.");
-        var referencedFoodIds = request.Items
-            .Where(x => x.FoodItemId.HasValue)
-            .Select(x => x.FoodItemId!.Value)
-            .Distinct()
-            .ToArray();
-        if (referencedFoodIds.Any(x => x == Guid.Empty))
-            return ValidationProblem("Selecciona alimentos válidos del catálogo.");
-        if (referencedFoodIds.Length > 0)
-        {
-            var availableFoodCount = await db.FoodItems.AsNoTracking()
-                .CountAsync(x => referencedFoodIds.Contains(x.Id) && !x.IsArchived, cancellationToken);
-            if (availableFoodCount != referencedFoodIds.Length)
-                return ValidationProblem("Uno o más alimentos ya no están disponibles. Actualiza el catálogo y vuelve a agregarlos.");
-        }
+        var (error, items) = await ValidateAndBuildItems(request, [], cancellationToken);
+        if (error is not null) return ValidationProblem(error);
 
         var plan = new MenuPlan
         {
@@ -69,17 +49,7 @@ public sealed class MenuPlansController(NutriVidaDbContext db) : ControllerBase
             EndsOn = request.EndsOn,
             EnergyTargetKcal = request.EnergyTargetKcal,
             ProfessionalNotes = request.ProfessionalNotes.Trim(),
-            Items = request.Items.Select(x => new MenuPlanItem
-            {
-                FoodItemId = x.FoodItemId,
-                DayOfWeek = x.DayOfWeek,
-                MealName = x.MealName.Trim(),
-                FoodNameSnapshot = x.FoodNameSnapshot.Trim(),
-                Portions = x.Portions,
-                Grams = x.Grams,
-                EnergyKcal = x.EnergyKcal,
-                HouseholdMeasure = x.HouseholdMeasure.Trim()
-            }).ToList()
+            Items = items!
         };
 
         db.MenuPlans.Add(plan);
@@ -98,7 +68,7 @@ public sealed class MenuPlansController(NutriVidaDbContext db) : ControllerBase
         if (plan is null) return NotFound();
         if (request.PatientId != plan.PatientId)
             return ValidationProblem("El paciente del plan no se puede cambiar.");
-        var error = await ValidateRequest(request, cancellationToken);
+        var (error, items) = await ValidateAndBuildItems(request, plan.Items, cancellationToken);
         if (error is not null) return ValidationProblem(error);
 
         plan.Name = request.Name.Trim();
@@ -106,8 +76,31 @@ public sealed class MenuPlansController(NutriVidaDbContext db) : ControllerBase
         plan.EndsOn = request.EndsOn;
         plan.EnergyTargetKcal = request.EnergyTargetKcal;
         plan.ProfessionalNotes = request.ProfessionalNotes.Trim();
+        // Un plan aprobado que cambia debe revisarse otra vez.
+        plan.Status = MenuPlanStatus.Draft;
+        plan.ApprovedAtUtc = null;
+        plan.ApprovedByName = string.Empty;
+        // Se añaden de forma explícita: con un Id ya generado, EF trataría las filas nuevas
+        // asignadas a la colección como existentes e intentaría actualizarlas.
         db.MenuPlanItems.RemoveRange(plan.Items);
-        plan.Items = BuildItems(request);
+        foreach (var item in items!) item.MenuPlanId = plan.Id;
+        db.MenuPlanItems.AddRange(items);
+        await db.SaveChangesAsync(cancellationToken);
+        return Ok(plan);
+    }
+
+    [HttpPost("{id:guid}/approve")]
+    public async Task<IActionResult> Approve(Guid id, CancellationToken cancellationToken)
+    {
+        if (!User.TryGetClinicId(out _)) return Forbid();
+        var accessiblePatientIds = db.AccessiblePatients(User).Select(x => x.Id);
+        var plan = await db.MenuPlans.Include(x => x.Items).SingleOrDefaultAsync(
+            x => x.Id == id && !x.IsArchived && accessiblePatientIds.Contains(x.PatientId),
+            cancellationToken);
+        if (plan is null) return NotFound();
+        plan.Status = MenuPlanStatus.Approved;
+        plan.ApprovedAtUtc = DateTime.UtcNow;
+        plan.ApprovedByName = User.Identity?.Name ?? "Profesional";
         await db.SaveChangesAsync(cancellationToken);
         return Ok(plan);
     }
@@ -127,34 +120,71 @@ public sealed class MenuPlansController(NutriVidaDbContext db) : ControllerBase
         return NoContent();
     }
 
-    private async Task<string?> ValidateRequest(MenuPlanRequest request, CancellationToken cancellationToken)
+    private async Task<(string? Error, List<MenuPlanItem>? Items)> ValidateAndBuildItems(
+        MenuPlanRequest request,
+        IReadOnlyCollection<MenuPlanItem> currentItems,
+        CancellationToken cancellationToken)
     {
-        if (request.PatientId == Guid.Empty) return "Selecciona un paciente válido.";
-        if (!await db.CanAccessPatientAsync(User, request.PatientId, cancellationToken))
-            return "El paciente seleccionado no está disponible.";
-        if (request.Items.Count == 0) return "Añade al menos un alimento o plato al menú.";
-        if (request.StartsOn == default || request.EndsOn == default) return "Selecciona fechas válidas para el plan.";
-        if (request.EndsOn < request.StartsOn) return "La fecha final debe ser posterior a la inicial.";
+        if (request.Items.Count == 0) return ("Añade al menos un alimento o plato al menú.", null);
+        if (request.StartsOn == default || request.EndsOn == default) return ("Selecciona fechas válidas para el plan.", null);
+        if (request.EndsOn < request.StartsOn) return ("La fecha final debe ser posterior a la inicial.", null);
         if (request.Items.Any(x => string.IsNullOrWhiteSpace(x.MealName) || string.IsNullOrWhiteSpace(x.FoodNameSnapshot)))
-            return "Cada alimento debe tener tiempo de comida y nombre.";
-        var foodIds = request.Items.Where(x => x.FoodItemId.HasValue).Select(x => x.FoodItemId!.Value).Distinct().ToArray();
-        if (foodIds.Any(x => x == Guid.Empty)) return "Selecciona alimentos válidos del catálogo.";
-        if (foodIds.Length > 0 && await db.FoodItems.AsNoTracking().CountAsync(x => foodIds.Contains(x.Id) && !x.IsArchived, cancellationToken) != foodIds.Length)
-            return "Uno o más alimentos ya no están disponibles.";
-        return null;
-    }
+            return ("Cada alimento debe tener tiempo de comida y nombre.", null);
+        if (request.Items.Any(x => !MenuPlanRules.IsDayWithinPlan(request.StartsOn, request.EndsOn, x.DayOfWeek)))
+            return ("Hay alimentos en un día que no forma parte de las fechas del plan.", null);
 
-    private static List<MenuPlanItem> BuildItems(MenuPlanRequest request) => request.Items.Select(x => new MenuPlanItem
+        var foodIds = request.Items.Where(x => x.FoodItemId.HasValue).Select(x => x.FoodItemId!.Value).Distinct().ToArray();
+        if (foodIds.Any(x => x == Guid.Empty)) return ("Selecciona alimentos válidos del catálogo.", null);
+        var foods = await db.FoodItems.AsNoTracking()
+            .Where(x => foodIds.Contains(x.Id))
+            .ToDictionaryAsync(x => x.Id, cancellationToken);
+        // Un alimento archivado solo se admite si ya estaba en el plan que se está editando.
+        var usable = foodIds.All(id => foods.TryGetValue(id, out var food)
+            && (!food.IsArchived || currentItems.Any(x => x.FoodItemId == id)));
+        if (!usable) return ("Uno o más alimentos ya no están disponibles. Actualiza el catálogo y vuelve a agregarlos.", null);
+
+        var items = request.Items.Select(row =>
+        {
+            var portions = decimal.Round(row.Portions, 2);
+            var item = new MenuPlanItem
+            {
+                FoodItemId = row.FoodItemId,
+                DayOfWeek = row.DayOfWeek,
+                MealName = row.MealName.Trim(),
+                FoodNameSnapshot = row.FoodNameSnapshot.Trim(),
+                Portions = portions,
+                Grams = row.Grams,
+                EnergyKcal = row.EnergyKcal,
+                HouseholdMeasure = row.HouseholdMeasure.Trim()
+            };
+            if (row.FoodItemId is not { } foodId) return item;
+
+            // Los valores nutricionales salen del servidor. Lo que ya estaba en el plan conserva su
+            // instantánea: una edición nueva del catálogo no cambia en silencio un plan antiguo.
+            var snapshot = currentItems.FirstOrDefault(x => x.FoodItemId == foodId && x.Portions == portions);
+            var food = foods[foodId];
+            item.FoodNameSnapshot = row.FoodNameSnapshot.Contains(food.Name, StringComparison.OrdinalIgnoreCase)
+                ? row.FoodNameSnapshot.Trim()
+                : snapshot?.FoodNameSnapshot ?? food.Name;
+            item.Grams = snapshot?.Grams ?? decimal.Round(food.PortionGrams * row.Portions, 2);
+            item.EnergyKcal = snapshot?.EnergyKcal ?? decimal.Round(food.EnergyKcal * row.Portions, 2);
+            item.HouseholdMeasure = snapshot?.HouseholdMeasure ?? food.HouseholdMeasure;
+            return item;
+        }).ToList();
+        return (null, items);
+    }
+}
+
+public static class MenuPlanRules
+{
+    /// <summary>dayOfWeek va de 1 (lunes) a 7 (domingo). Un plan de 7 días o más incluye todos.</summary>
+    public static bool IsDayWithinPlan(DateOnly startsOn, DateOnly endsOn, int dayOfWeek)
     {
-        FoodItemId = x.FoodItemId,
-        DayOfWeek = x.DayOfWeek,
-        MealName = x.MealName.Trim(),
-        FoodNameSnapshot = x.FoodNameSnapshot.Trim(),
-        Portions = x.Portions,
-        Grams = x.Grams,
-        EnergyKcal = x.EnergyKcal,
-        HouseholdMeasure = x.HouseholdMeasure.Trim()
-    }).ToList();
+        if (endsOn.DayNumber - startsOn.DayNumber >= 6) return dayOfWeek is >= 1 and <= 7;
+        for (var date = startsOn; date <= endsOn; date = date.AddDays(1))
+            if ((date.DayOfWeek == DayOfWeek.Sunday ? 7 : (int)date.DayOfWeek) == dayOfWeek) return true;
+        return false;
+    }
 }
 
 public sealed record MenuPlanItemRequest(
@@ -162,8 +192,8 @@ public sealed record MenuPlanItemRequest(
     [Range(1, 7)] int DayOfWeek,
     [Required, MaxLength(60)] string MealName,
     [Required, MaxLength(180)] string FoodNameSnapshot,
-    [Range(0.25, 20)] decimal Portions,
-    [Range(0.1, 10000)] decimal Grams,
+    [Range(0.01, 20)] decimal Portions,
+    [Range(0.01, 10000)] decimal Grams,
     [Range(0, 10000)] decimal EnergyKcal,
     [MaxLength(120)] string HouseholdMeasure);
 

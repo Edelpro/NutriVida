@@ -29,23 +29,109 @@ namespace NutriVida.Infrastructure.Persistence.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uniqueidentifier");
 
+                    b.Property<decimal?>("AbdominalSkinfoldMm")
+                        .HasPrecision(6, 2)
+                        .HasColumnType("decimal(6,2)");
+
+                    b.Property<decimal?>("ArmFlexedCm")
+                        .HasPrecision(6, 2)
+                        .HasColumnType("decimal(6,2)");
+
+                    b.Property<decimal?>("ArmRelaxedCm")
+                        .HasPrecision(6, 2)
+                        .HasColumnType("decimal(6,2)");
+
+                    b.Property<decimal?>("ArmSpanCm")
+                        .HasPrecision(6, 2)
+                        .HasColumnType("decimal(6,2)");
+
+                    b.Property<string>("AscitesGrade")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("nvarchar(40)");
+
+                    b.Property<decimal?>("BicepsSkinfoldMm")
+                        .HasPrecision(6, 2)
+                        .HasColumnType("decimal(6,2)");
+
                     b.Property<decimal?>("BodyFatPercent")
                         .HasPrecision(5, 2)
                         .HasColumnType("decimal(5,2)");
+
+                    b.Property<decimal?>("CalfCm")
+                        .HasPrecision(6, 2)
+                        .HasColumnType("decimal(6,2)");
+
+                    b.Property<decimal?>("ChestCm")
+                        .HasPrecision(6, 2)
+                        .HasColumnType("decimal(6,2)");
 
                     b.Property<DateTime>("CreatedAtUtc")
                         .HasPrecision(0)
                         .HasColumnType("datetime2(0)");
 
+                    b.Property<string>("EdemaGrade")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("nvarchar(40)");
+
+                    b.Property<decimal?>("FemurBreadthCm")
+                        .HasPrecision(6, 2)
+                        .HasColumnType("decimal(6,2)");
+
+                    b.Property<decimal?>("ForearmCm")
+                        .HasPrecision(6, 2)
+                        .HasColumnType("decimal(6,2)");
+
+                    b.Property<decimal?>("FrontThighSkinfoldMm")
+                        .HasPrecision(6, 2)
+                        .HasColumnType("decimal(6,2)");
+
+                    b.Property<decimal?>("GripStrengthKg")
+                        .HasPrecision(6, 2)
+                        .HasColumnType("decimal(6,2)");
+
+                    b.Property<decimal?>("HeadCm")
+                        .HasPrecision(6, 2)
+                        .HasColumnType("decimal(6,2)");
+
                     b.Property<decimal>("HeightCm")
+                        .HasPrecision(6, 2)
+                        .HasColumnType("decimal(6,2)");
+
+                    b.Property<decimal?>("HipCm")
+                        .HasPrecision(6, 2)
+                        .HasColumnType("decimal(6,2)");
+
+                    b.Property<decimal?>("HumerusBreadthCm")
+                        .HasPrecision(6, 2)
+                        .HasColumnType("decimal(6,2)");
+
+                    b.Property<decimal?>("IliacCrestSkinfoldMm")
                         .HasPrecision(6, 2)
                         .HasColumnType("decimal(6,2)");
 
                     b.Property<bool>("IsArchived")
                         .HasColumnType("bit");
 
+                    b.Property<decimal?>("KneeHeightCm")
+                        .HasPrecision(6, 2)
+                        .HasColumnType("decimal(6,2)");
+
                     b.Property<DateTime>("MeasuredAtUtc")
                         .HasColumnType("datetime2");
+
+                    b.Property<decimal?>("MedialCalfSkinfoldMm")
+                        .HasPrecision(6, 2)
+                        .HasColumnType("decimal(6,2)");
+
+                    b.Property<decimal?>("MidThighCm")
+                        .HasPrecision(6, 2)
+                        .HasColumnType("decimal(6,2)");
+
+                    b.Property<decimal?>("NeckCm")
+                        .HasPrecision(6, 2)
+                        .HasColumnType("decimal(6,2)");
 
                     b.Property<string>("Notes")
                         .IsRequired()
@@ -60,15 +146,39 @@ namespace NutriVida.Infrastructure.Persistence.Migrations
                         .ValueGeneratedOnAddOrUpdate()
                         .HasColumnType("rowversion");
 
+                    b.Property<decimal?>("SittingHeightCm")
+                        .HasPrecision(6, 2)
+                        .HasColumnType("decimal(6,2)");
+
+                    b.Property<decimal?>("SubscapularSkinfoldMm")
+                        .HasPrecision(6, 2)
+                        .HasColumnType("decimal(6,2)");
+
+                    b.Property<decimal?>("SupraspinaleSkinfoldMm")
+                        .HasPrecision(6, 2)
+                        .HasColumnType("decimal(6,2)");
+
+                    b.Property<decimal?>("TricepsSkinfoldMm")
+                        .HasPrecision(6, 2)
+                        .HasColumnType("decimal(6,2)");
+
                     b.Property<DateTime>("UpdatedAtUtc")
                         .HasPrecision(0)
                         .HasColumnType("datetime2(0)");
+
+                    b.Property<decimal?>("UsualWeightKg")
+                        .HasPrecision(6, 2)
+                        .HasColumnType("decimal(6,2)");
 
                     b.Property<decimal?>("WaistCm")
                         .HasPrecision(6, 2)
                         .HasColumnType("decimal(6,2)");
 
                     b.Property<decimal>("WeightKg")
+                        .HasPrecision(6, 2)
+                        .HasColumnType("decimal(6,2)");
+
+                    b.Property<decimal?>("WristBreadthCm")
                         .HasPrecision(6, 2)
                         .HasColumnType("decimal(6,2)");
 
@@ -126,6 +236,10 @@ namespace NutriVida.Infrastructure.Persistence.Migrations
                         .IsRequired()
                         .HasColumnType("nvarchar(max)");
 
+                    b.Property<string>("FamilyHistory")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
                     b.Property<bool>("HasConstipation")
                         .HasColumnType("bit");
 
@@ -136,11 +250,31 @@ namespace NutriVida.Infrastructure.Persistence.Migrations
                     b.Property<bool>("IsArchived")
                         .HasColumnType("bit");
 
+                    b.Property<string>("LabResults")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("MedicalHistory")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("Medications")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
                     b.Property<Guid>("PatientId")
                         .HasColumnType("uniqueidentifier");
 
+                    b.Property<string>("Recall24hJson")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
                     b.Property<DateTime>("RecordedAtUtc")
                         .HasColumnType("datetime2");
+
+                    b.Property<string>("ReproductiveStatus")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
 
                     b.Property<byte[]>("RowVersion")
                         .IsConcurrencyToken()
@@ -153,6 +287,10 @@ namespace NutriVida.Infrastructure.Persistence.Migrations
                         .HasColumnType("decimal(4,1)");
 
                     b.Property<string>("SleepQuality")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("Supplements")
                         .IsRequired()
                         .HasColumnType("nvarchar(max)");
 
@@ -175,6 +313,10 @@ namespace NutriVida.Infrastructure.Persistence.Migrations
 
                     b.Property<DateTime?>("ApprovedAtUtc")
                         .HasColumnType("datetime2");
+
+                    b.Property<string>("ApprovedByName")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
 
                     b.Property<Guid?>("AssessmentId")
                         .HasColumnType("uniqueidentifier");
@@ -432,6 +574,10 @@ namespace NutriVida.Infrastructure.Persistence.Migrations
                     b.Property<int>("AgeYears")
                         .HasColumnType("int");
 
+                    b.Property<string>("CalculatedByName")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
                     b.Property<DateTime>("CreatedAtUtc")
                         .HasPrecision(0)
                         .HasColumnType("datetime2(0)");
@@ -665,6 +811,10 @@ namespace NutriVida.Infrastructure.Persistence.Migrations
                         .HasPrecision(8, 2)
                         .HasColumnType("decimal(8,2)");
 
+                    b.Property<string>("ExchangeGroup")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
                     b.Property<decimal>("FatG")
                         .HasPrecision(8, 2)
                         .HasColumnType("decimal(8,2)");
@@ -813,6 +963,9 @@ namespace NutriVida.Infrastructure.Persistence.Migrations
                         .HasMaxLength(180)
                         .HasColumnType("nvarchar(180)");
 
+                    b.Property<int>("FailedLoginAttempts")
+                        .HasColumnType("int");
+
                     b.Property<string>("FullName")
                         .IsRequired()
                         .HasMaxLength(160)
@@ -825,6 +978,9 @@ namespace NutriVida.Infrastructure.Persistence.Migrations
                         .HasColumnType("bit");
 
                     b.Property<DateTime?>("LastLoginAtUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime?>("LockedUntilUtc")
                         .HasColumnType("datetime2");
 
                     b.Property<bool>("MustChangePassword")
@@ -1025,6 +1181,13 @@ namespace NutriVida.Infrastructure.Persistence.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uniqueidentifier");
 
+                    b.Property<DateTime?>("ApprovedAtUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("ApprovedByName")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
                     b.Property<DateTime>("CreatedAtUtc")
                         .HasPrecision(0)
                         .HasColumnType("datetime2(0)");
@@ -1222,6 +1385,57 @@ namespace NutriVida.Infrastructure.Persistence.Migrations
                     b.HasIndex("ClinicId", "AssignedNutritionistUserId", "Status");
 
                     b.ToTable("Patients", "nutri");
+                });
+
+            modelBuilder.Entity("NutriVida.Domain.Settings.ClinicSettings", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Address")
+                        .IsRequired()
+                        .HasMaxLength(300)
+                        .HasColumnType("nvarchar(300)");
+
+                    b.Property<Guid>("ClinicId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime>("CreatedAtUtc")
+                        .HasPrecision(0)
+                        .HasColumnType("datetime2(0)");
+
+                    b.Property<decimal>("DefaultEtaPercent")
+                        .HasPrecision(4, 3)
+                        .HasColumnType("decimal(4,3)");
+
+                    b.Property<int>("DefaultFormula")
+                        .HasColumnType("int");
+
+                    b.Property<bool>("IsArchived")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("PracticeName")
+                        .IsRequired()
+                        .HasMaxLength(160)
+                        .HasColumnType("nvarchar(160)");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
+
+                    b.Property<DateTime>("UpdatedAtUtc")
+                        .HasPrecision(0)
+                        .HasColumnType("datetime2(0)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ClinicId")
+                        .IsUnique();
+
+                    b.ToTable("ClinicSettings", "nutri");
                 });
 
             modelBuilder.Entity("NutriVida.Domain.Templates.QuickTemplate", b =>

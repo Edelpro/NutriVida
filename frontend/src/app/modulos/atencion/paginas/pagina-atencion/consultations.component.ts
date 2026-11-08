@@ -19,11 +19,11 @@ import { ConsultationListItem } from '../../modelos/consultation.models';
         <p class="eyebrow">Agenda clínica</p>
         <h1>Atención</h1>
         <p class="lede">
-          Organiza consultas y abre la historia sin perder el contexto del paciente.
+          Organiza las atenciones del día y abre la evaluación de cada paciente.
         </p>
       </div>
       <button class="button button-primary" type="button" (click)="openComposer()">
-        <app-icon name="plus" /> Agendar consulta
+        <app-icon name="plus" /> Nueva atención
       </button>
     </header>
     <app-patient-context-bar />
@@ -106,6 +106,16 @@ import { ConsultationListItem } from '../../modelos/consultation.models';
             <button class="button button-secondary button-small" type="button" (click)="moveDay(1)">
               Día siguiente
             </button>
+            <button class="button button-quiet button-small" type="button" (click)="goToDate(todayKey())">
+              Hoy
+            </button>
+            <input
+              class="date-jump"
+              type="date"
+              aria-label="Ir a una fecha"
+              [value]="selectedKey()"
+              (change)="goToDate($any($event.target).value)"
+            />
           </div>
         </header>
         @if (loading()) {
@@ -122,16 +132,19 @@ import { ConsultationListItem } from '../../modelos/consultation.models';
                   <p>{{ item.reason }} · {{ item.durationMinutes }} min</p>
                 </div>
                 <div class="toolbar">
+                  @if (item.status === 'Scheduled' || item.status === 'InProgress') {
+                    <button class="button button-primary button-small" type="button" (click)="markCompleted(item)">Marcar atendida</button>
+                  }
                   <button class="button button-secondary button-small" type="button" (click)="edit(item)">Editar</button>
                   @if (auth.hasRole('ClinicAdmin')) {<button class="button button-danger button-small" type="button" (click)="archive(item)">Archivar</button>}
-                  <a class="button button-secondary button-small" routerLink="/evaluaciones" (click)="patientContext.select(item.patientId)">Abrir <app-icon name="arrow" /></a>
+                  <a class="button button-secondary button-small" routerLink="/evaluaciones" (click)="patientContext.select(item.patientId)">Abrir evaluación <app-icon name="arrow" /></a>
                 </div>
               </article>
             } @empty {
               <div class="empty-state">
                 <div>
                   <app-icon name="calendar" />
-                  <h2>Sin consultas</h2>
+                  <h2>Sin atenciones</h2>
                   <p>Agenda una atención para este día.</p>
                 </div>
               </div>
@@ -142,16 +155,13 @@ import { ConsultationListItem } from '../../modelos/consultation.models';
       <aside class="surface quick">
         <div class="surface-body">
           <p class="eyebrow">Preparación</p>
-          <h2>Antes de atender</h2>
+          <h2>Qué revisar antes de atender</h2>
           <ul>
-            <li><app-icon name="check" /><span>Consentimientos y contacto</span></li>
-            <li><app-icon name="check" /><span>Última antropometría</span></li>
-            <li><app-icon name="check" /><span>Seguimiento según control acordado</span></li>
-            <li><app-icon name="check" /><span>Plan vigente y mensajes</span></li>
+            <li><app-icon name="info" /><span>Consentimientos y contacto</span></li>
+            <li><app-icon name="info" /><span>Última antropometría</span></li>
+            <li><app-icon name="info" /><span>Seguimiento según control acordado</span></li>
+            <li><app-icon name="info" /><span>Plan vigente y mensajes</span></li>
           </ul>
-          <div class="notice">
-            <app-icon name="info" />Las consultas no completadas quedan señaladas para revisión.
-          </div>
         </div>
       </aside>
     </div>
@@ -160,6 +170,11 @@ import { ConsultationListItem } from '../../modelos/consultation.models';
     `
       .composer {
         margin-bottom: 1rem;
+      }
+      .date-jump {
+        width: auto;
+        min-height: 2rem;
+        padding: 0.2rem 0.5rem;
       }
       .composer-footer {
         padding: 1rem 1.15rem;
@@ -363,9 +378,37 @@ export class ConsultationsComponent implements OnInit {
       reason: item.reason,
       durationMinutes: item.durationMinutes,
       status: item.status === 'Completed' ? 2 : item.status === 'Cancelled' ? 3 : item.status === 'InProgress' ? 1 : 0,
-      notes: '',
+      notes: item.notes ?? '',
     };
     this.showComposer.set(true);
+  }
+  markCompleted(item: ConsultationListItem): void {
+    this.api
+      .update(item.id, {
+        startsAtUtc: item.startsAtUtc,
+        durationMinutes: item.durationMinutes,
+        reason: item.reason,
+        status: 2,
+        notes: item.notes ?? '',
+      })
+      .subscribe({
+        next: () => {
+          this.load();
+          this.toast.show('success', 'Atención completada');
+        },
+        error: (e) => this.toast.show('error', 'No se actualizó la atención', e.message),
+      });
+  }
+  todayKey(): string {
+    return this.dateKey(new Date());
+  }
+  selectedKey(): string {
+    return this.dateKey(this.selectedDate());
+  }
+  goToDate(value: string): void {
+    if (!value) return;
+    this.selectedDate.set(new Date(`${value}T12:00:00`));
+    this.load();
   }
   archive(item: ConsultationListItem): void {
     if (!confirm('¿Archivar esta consulta? Se conservará en la auditoría.')) return;
